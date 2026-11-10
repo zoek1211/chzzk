@@ -79,7 +79,8 @@ CHZZK_SSL_KEY_STORE_PASSWORD=<비밀번호> ./gradlew bootRun
 | 기능 | 위치 |
 | --- | --- |
 | 방송 시작: 제목 입력 + 카메라·마이크 미리보기 후 시작. 방송자에게만 송출 키를 줌 | `GET /live/new`, `POST /live` |
-| WebRTC 시그널링 (방송자는 송출 키 필요, 시청자는 누구나) | `/ws/live/{id}/broadcaster?key=…`, `/ws/live/{id}/viewer` |
+| WebRTC 시그널링 (방송자는 접속 뒤 첫 메시지 `{type:"auth", key}` 로 송출 키 인증, 시청자는 누구나. 키는 주소에 싣지 않음) | `/ws/live/{id}/broadcaster`, `/ws/live/{id}/viewer` |
+| 방송자 접속 유예: 시작 후 `CHZZK_BROADCASTER_JOIN_TIMEOUT`(기본 30s) 안에 방송자가 인증하지 않으면 방송이 종료됨 | `SignalingHandler` |
 | 시청 화면: 방송 중이면 실시간 재생, 종료면 종료 안내와 시작·종료 시각 | `GET /live/{id}` |
 | 방송 종료: 송출 키로 종료 버튼 또는 `POST /live/{id}/end` (헤더 `X-Broadcast-Key`) | 송출 화면 |
 | 연결 끊김 자동 종료: 방송자 연결이 끊기면 방송이 종료되고 시청자에게 종료가 알려짐 | `SignalingHandler` |
@@ -108,7 +109,7 @@ src/main/java/kr/devcourse/chzzk/
 │   ├── RecordedBroadcast.java            녹화방송 엔티티 + 등록 규칙
 │   ├── VideoSource.java                  영상 출처 (UPLOADED / EXTERNAL)
 │   ├── RecordedBroadcastRepository.java  JPA 저장소
-│   ├── RecordedBroadcastController.java  등록·목록·상세 화면
+│   ├── RecordedBroadcastController.java  등록·상세 화면
 │   └── InvalidRegistrationException.java
 ├── video/
 │   ├── VideoStorage.java                 업로드 영상 디스크 보관
@@ -116,15 +117,17 @@ src/main/java/kr/devcourse/chzzk/
 └── live/                                 2단계 라이브 방송
     ├── LiveBroadcast.java                라이브 엔티티 (제목, 상태, 시작·종료 시각, 송출 키 해시)
     ├── LiveStatus.java                   방송 중 / 종료
-    ├── LiveBroadcastRepository.java      JPA 저장소
+    ├── LiveBroadcastRepository.java      JPA 저장소 (방송 목록 순서 쿼리 포함)
     ├── LiveBroadcastService.java         시작·종료·송출 키 검증
     ├── LiveBroadcastController.java      송출·시청 화면, 시작·종료 API
-    ├── SignalingConfig.java              WebSocket 경로 등록, 접속 허용 검사
-    ├── SignalingHandler.java             WebRTC 시그널링 중계, 정원, 끊김 시 종료
-    ├── LiveEnded.java                    종료 이벤트
-    ├── LiveStartupCleanup.java           재시작 시 방송 중 → 종료
+    ├── SignalingConfig.java              WebSocket 경로 등록, 시청자 접속 허용 검사
+    ├── SignalingHandler.java             WebRTC 시그널링 중계, 방송자 인증, 정원, 끊김·접속 유예 초과 시 종료
+    ├── LiveStarted.java, LiveEnded.java  시작·종료 이벤트
+    ├── LiveStartupCleanup.java           재시작 시 방송 중 → 종료 (웹 서버가 요청을 받기 전)
     ├── IceServers.java                   STUN/TURN 설정 제공
-    └── (예외) InvalidBroadcastKeyException, LiveNotFoundException
+    └── (예외) InvalidBroadcastKeyException, InvalidLiveStartException, LiveNotFoundException
+└── list/
+    └── BroadcastListController.java      방송 목록(라이브 + 녹화방송)과 첫 화면
 src/main/resources/templates/             broadcasts/*, live/new.html(송출), live/watch.html(시청)
 docs/adr/0001-webrtc-p2p-live.md          WebRTC P2P 선택 기록
 ```

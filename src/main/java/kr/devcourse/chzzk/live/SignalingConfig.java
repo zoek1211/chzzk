@@ -12,12 +12,12 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import org.springframework.web.socket.server.HandshakeInterceptor;
-import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * 시그널링 WebSocket 경로.
- * 방송자: /ws/live/{id}/broadcaster?key=송출키, 시청자: /ws/live/{id}/viewer.
- * 핸드셰이크 단계에서 거부한다(없는 방송 404, 키가 틀리거나 종료된 방송 403).
+ * 방송자: /ws/live/{id}/broadcaster (접속 뒤 첫 메시지 {type:"auth", key}로 인증), 시청자: /ws/live/{id}/viewer.
+ * 시청자는 핸드셰이크 단계에서 거부한다(없는 방송 404, 종료된 방송 403).
+ * 방송자는 송출 키를 주소에 싣지 않으므로 인증 실패(없는 방송·종료·틀린 키)를 접속 뒤 정책 위반으로 닫는다.
  */
 @Configuration
 @EnableWebSocket
@@ -50,21 +50,18 @@ class SignalingConfig implements WebSocketConfigurer {
             }
             Long id = Long.valueOf(path.group(1));
             boolean broadcaster = path.group(2).equals("broadcaster");
-            var found = live.find(id);
-            if (found.isEmpty()) {
-                return reject(response, HttpStatus.NOT_FOUND);
-            }
-            if (broadcaster) {
-                String key = UriComponentsBuilder.fromUri(request.getURI()).build()
-                        .getQueryParams().getFirst("key");
-                if (!found.get().isOnAir() || !live.verifyBroadcastKey(id, key)) {
+            if (!broadcaster) {
+                var found = live.find(id);
+                if (found.isEmpty()) {
+                    return reject(response, HttpStatus.NOT_FOUND);
+                }
+                if (!found.get().isOnAir()) {
                     return reject(response, HttpStatus.FORBIDDEN);
                 }
-            } else if (!found.get().isOnAir()) {
-                return reject(response, HttpStatus.FORBIDDEN);
             }
-            attributes.put(SignalingHandler.LIVE_ID, id);
-            attributes.put(SignalingHandler.BROADCASTER, broadcaster);
+            // 방송자는 접속 뒤 첫 메시지(auth)로 인증하므로 핸드셰이크에서는 경로만 확인한다.
+            attributes.put(SignalingHandler.Peer.ATTRIBUTE, new SignalingHandler.Peer(id,
+                    broadcaster ? SignalingHandler.Role.BROADCASTER : SignalingHandler.Role.VIEWER));
             return true;
         }
 

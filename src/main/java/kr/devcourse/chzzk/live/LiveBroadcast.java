@@ -32,7 +32,21 @@ public class LiveBroadcast {
 
     private Instant endedAt;
 
+    private static final int MAX_TITLE_LENGTH = 200;
+
     protected LiveBroadcast() {
+    }
+
+    /** 라이브 제목 규칙: 공백만으로 이루어질 수 없고 최대 200자. 앞뒤 공백은 지운다. */
+    static String validTitle(String title) {
+        String trimmed = title == null ? "" : title.strip();
+        if (trimmed.isEmpty()) {
+            throw new InvalidLiveStartException("제목을 입력해 주세요.");
+        }
+        if (trimmed.length() > MAX_TITLE_LENGTH) {
+            throw new InvalidLiveStartException("제목은 " + MAX_TITLE_LENGTH + "자 이하로 입력해 주세요.");
+        }
+        return trimmed;
     }
 
     LiveBroadcast(String title, String broadcastKeyHash) {

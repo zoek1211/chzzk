@@ -15,6 +15,7 @@ final class SignalingClient implements AutoCloseable {
     private final BlockingQueue<String> messages = new LinkedBlockingQueue<>();
     private final WebSocket socket;
     private volatile boolean closed;
+    private volatile int closeCode = -1;
 
     private SignalingClient(URI uri) {
         this.socket = HttpClient.newHttpClient().newWebSocketBuilder()
@@ -24,6 +25,17 @@ final class SignalingClient implements AutoCloseable {
     /** 접속한다. 서버가 핸드셰이크를 거부하면 예외가 난다. */
     static SignalingClient connect(String uri) {
         return new SignalingClient(URI.create(uri));
+    }
+
+    /** 방송자로 접속해 첫 메시지로 인증하고, 서버의 인증 확인까지 기다린다. 인증에 실패하면 예외가 난다. */
+    static SignalingClient authenticatedBroadcaster(int port, String liveId, String key) throws InterruptedException {
+        SignalingClient client = connect("ws://localhost:" + port + "/ws/live/" + liveId + "/broadcaster");
+        client.send("{\"type\":\"auth\",\"key\":\"" + key + "\"}");
+        String type = client.next("$.type");
+        if (!"authenticated".equals(type)) {
+            throw new AssertionError("인증 확인을 받지 못했습니다: " + type);
+        }
+        return client;
     }
 
     void send(String json) {
@@ -53,6 +65,11 @@ final class SignalingClient implements AutoCloseable {
         return closed;
     }
 
+    /** 서버가 보낸 닫힘 상태 코드. 아직 닫히지 않았으면 -1. */
+    int closeCode() {
+        return closeCode;
+    }
+
     @Override
     public void close() {
         socket.sendClose(WebSocket.NORMAL_CLOSURE, "bye");
@@ -74,6 +91,7 @@ final class SignalingClient implements AutoCloseable {
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            closeCode = statusCode;
             closed = true;
             return null;
         }

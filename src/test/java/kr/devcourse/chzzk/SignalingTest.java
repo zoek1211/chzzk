@@ -2,6 +2,7 @@ package kr.devcourse.chzzk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 import com.jayway.jsonpath.JsonPath;
 import java.net.URI;
@@ -9,6 +10,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,9 +47,19 @@ class SignalingTest {
                 JsonPath.read(response.body(), "$.broadcastKey"));
     }
 
-    SignalingClient broadcaster(Live live, String key) {
-        return SignalingClient.connect(
-                "ws://localhost:" + port + "/ws/live/" + live.id() + "/broadcaster?key=" + key);
+    SignalingClient broadcaster(Live live, String key) throws InterruptedException {
+        return SignalingClient.authenticatedBroadcaster(port, live.id(), key);
+    }
+
+    SignalingClient unauthenticatedBroadcaster(String liveId) {
+        return SignalingClient.connect("ws://localhost:" + port + "/ws/live/" + liveId + "/broadcaster");
+    }
+
+    boolean isEnded(Live live) throws Exception {
+        String html = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id())).build(),
+                HttpResponse.BodyHandlers.ofString()).body();
+        return LivePages.showsEnded(html);
     }
 
     SignalingClient viewer(String liveId) {
@@ -63,13 +75,42 @@ class SignalingTest {
     }
 
     @Test
-    void 틀린_송출_키로는_방송자로_접속할_수_없다() throws Exception {
+    void 틀린_송출_키는_정책_위반으로_닫힌다() throws Exception {
         Live live = startLive("틀린 키");
-        assertThatThrownBy(() -> broadcaster(live, "wrong-key")).isNotNull();
+        try (SignalingClient client = unauthenticatedBroadcaster(live.id())) {
+            client.send("{\"type\":\"auth\",\"key\":\"wrong-key\"}");
+
+            await().atMost(Duration.ofSeconds(5)).until(client::isClosed);
+            assertThat(client.closeCode()).isEqualTo(1008);
+        }
     }
 
     @Test
-    void 종료된_라이브_방송에는_올바른_송출_키로도_방송자로_접속할_수_없다() throws Exception {
+    void 인증_전에_다른_메시지를_보내면_정책_위반으로_닫히고_방송은_그대로다() throws Exception {
+        Live live = startLive("인증 전");
+        try (SignalingClient client = unauthenticatedBroadcaster(live.id())) {
+            client.send("{\"type\":\"offer\",\"viewerId\":\"x\",\"sdp\":\"s\"}");
+
+            await().atMost(Duration.ofSeconds(5)).until(client::isClosed);
+            assertThat(client.closeCode()).isEqualTo(1008);
+        }
+        assertThat(isEnded(live)).isFalse();
+    }
+
+    @Test
+    void 쿼리의_송출_키는_인증으로_인정되지_않는다() throws Exception {
+        Live live = startLive("쿼리 키");
+        try (SignalingClient client = SignalingClient.connect(
+                "ws://localhost:" + port + "/ws/live/" + live.id() + "/broadcaster?key=" + live.key())) {
+            assertThat(client.receivesNothing()).isTrue();
+            client.send("{\"type\":\"offer\",\"viewerId\":\"x\",\"sdp\":\"s\"}");
+
+            await().atMost(Duration.ofSeconds(5)).until(client::isClosed);
+        }
+    }
+
+    @Test
+    void 종료된_라이브_방송에는_올바른_송출_키로도_방송자로_인증할_수_없다() throws Exception {
         Live live = startLive("종료된 방송");
         HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id() + "/end"))
@@ -77,13 +118,37 @@ class SignalingTest {
                         .POST(HttpRequest.BodyPublishers.noBody()).build(),
                 HttpResponse.BodyHandlers.discarding());
 
-        assertThatThrownBy(() -> broadcaster(live, live.key())).isNotNull();
+        try (SignalingClient client = unauthenticatedBroadcaster(live.id())) {
+            client.send("{\"type\":\"auth\",\"key\":\"" + live.key() + "\"}");
+
+            await().atMost(Duration.ofSeconds(5)).until(client::isClosed);
+            assertThat(client.closeCode()).isEqualTo(1008);
+        }
     }
 
     @Test
-    void 없는_라이브_방송으로는_방송자도_시청자도_접속할_수_없다() {
-        assertThatThrownBy(() -> broadcaster(new Live("99999", "x"), "x")).isNotNull();
+    void 없는_라이브_방송은_방송자_인증이_닫히고_시청자는_접속할_수_없다() throws Exception {
+        try (SignalingClient client = unauthenticatedBroadcaster("99999")) {
+            client.send("{\"type\":\"auth\",\"key\":\"x\"}");
+
+            await().atMost(Duration.ofSeconds(5)).until(client::isClosed);
+            assertThat(client.closeCode()).isEqualTo(1008);
+        }
         assertThatThrownBy(() -> viewer("99999")).isNotNull();
+    }
+
+    @Test
+    void 이미_방송자가_있으면_두_번째_방송자는_올바른_키여도_거부되고_방송은_계속된다() throws Exception {
+        Live live = startLive("두 번째 방송자");
+        try (SignalingClient first = broadcaster(live, live.key());
+             SignalingClient second = unauthenticatedBroadcaster(live.id())) {
+            second.send("{\"type\":\"auth\",\"key\":\"" + live.key() + "\"}");
+
+            await().atMost(Duration.ofSeconds(5)).until(second::isClosed);
+            assertThat(second.closeCode()).isEqualTo(1008);
+            assertThat(isEnded(live)).isFalse();
+            assertThat(first.isClosed()).isFalse();
+        }
     }
 
     @Test

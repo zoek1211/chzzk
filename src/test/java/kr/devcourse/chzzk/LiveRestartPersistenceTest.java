@@ -72,16 +72,16 @@ class LiveRestartPersistenceTest {
             mvc.perform(post("/live/" + endedId + "/end").header("X-Broadcast-Key", ended[1]))
                     .andExpect(status().isOk());
             endedHtmlBefore = mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString();
-            assertThat(mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())
-                    .doesNotContain("방송이 종료되었습니다");
+            assertThat(LivePages.showsEnded(
+                    mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())).isFalse();
         }
 
         Thread.sleep(1100);
 
         try (ConfigurableApplicationContext second = start()) {
             MockMvc mvc = mvcOf(second);
-            assertThat(mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())
-                    .contains("방송이 종료되었습니다");
+            assertThat(LivePages.showsEnded(
+                    mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())).isTrue();
             assertThat(mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString())
                     .isEqualTo(endedHtmlBefore);
         }

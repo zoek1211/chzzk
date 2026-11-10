@@ -4,12 +4,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
-import kr.devcourse.chzzk.broadcast.RecordedBroadcast;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,16 +29,14 @@ public class LiveBroadcastService {
     public StartedLive start(String title) {
         String broadcastKey = newBroadcastKey();
         LiveBroadcast saved = broadcasts.save(
-                new LiveBroadcast(RecordedBroadcast.validTitle(title), hash(broadcastKey)));
+                new LiveBroadcast(LiveBroadcast.validTitle(title), hash(broadcastKey)));
+        events.publishEvent(new LiveStarted(saved.getId()));
         return new StartedLive(saved.getId(), broadcastKey);
     }
 
     /** 방송 중이 먼저, 그다음 종료. 각 그룹은 최신순. */
     public List<LiveBroadcast> list() {
-        List<LiveBroadcast> all = new ArrayList<>(
-                broadcasts.findAllByStatusOrderByStartedAtDescIdDesc(LiveStatus.ON_AIR));
-        all.addAll(broadcasts.findAllByStatusOrderByStartedAtDescIdDesc(LiveStatus.ENDED));
-        return all;
+        return broadcasts.findAllInListOrder();
     }
 
     /**
@@ -58,10 +54,10 @@ public class LiveBroadcastService {
         endAndAnnounce(broadcast);
     }
 
-    /** 송출 키가 그 라이브 방송의 것인지. 없는 방송이면 false. (송출 접속 검증용) */
+    /** 송출 키가 방송 중인 그 라이브 방송의 것인지. 없거나 종료된 방송이면 false. (송출 접속 검증용, 조회 한 번) */
     @Transactional(readOnly = true)
-    public boolean verifyBroadcastKey(Long id, String broadcastKey) {
-        return broadcasts.findById(id).map(b -> isValidKey(b, broadcastKey)).orElse(false);
+    public boolean canBroadcast(Long id, String broadcastKey) {
+        return broadcasts.findById(id).map(b -> b.isOnAir() && isValidKey(b, broadcastKey)).orElse(false);
     }
 
     /** 방송자 연결이 끊겨 송출 키 없이 종료한다. 없거나 이미 종료면 아무 일도 없다. 내부(시그널링)용. */

@@ -48,9 +48,8 @@ class LiveEndSignalingTest {
                 JsonPath.read(response.body(), "$.broadcastKey"));
     }
 
-    SignalingClient broadcaster(Live live) {
-        return SignalingClient.connect(
-                "ws://localhost:" + port + "/ws/live/" + live.id() + "/broadcaster?key=" + live.key());
+    SignalingClient broadcaster(Live live) throws InterruptedException {
+        return SignalingClient.authenticatedBroadcaster(port, live.id(), live.key());
     }
 
     SignalingClient viewer(Live live) {
@@ -58,8 +57,9 @@ class LiveEndSignalingTest {
     }
 
     boolean isEnded(Live live) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id())).build(),
-                HttpResponse.BodyHandlers.ofString()).body().contains("방송이 종료되었습니다");
+        return LivePages.showsEnded(http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id())).build(),
+                HttpResponse.BodyHandlers.ofString()).body());
     }
 
     @Test

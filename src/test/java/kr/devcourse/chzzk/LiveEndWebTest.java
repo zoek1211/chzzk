@@ -65,11 +65,12 @@ class LiveEndWebTest {
     @Test
     void 올바른_송출_키로_종료하면_시청_화면이_종료_안내와_시작_종료_시각을_보여준다() throws Exception {
         Live live = start("곧 끝날 라이브");
-        assertThat(page("/live/" + live.id())).doesNotContain("방송이 종료되었습니다");
+        assertThat(LivePages.showsEnded(page("/live/" + live.id()))).isFalse();
 
         assertThat(end(live.id(), live.key())).isEqualTo(200);
 
         String html = page("/live/" + live.id());
+        assertThat(LivePages.showsEnded(html)).isTrue();
         assertThat(html).contains("방송이 종료되었습니다", "곧 끝날 라이브", "종료");
         assertThat(html).doesNotContain("<video");
         assertThat(html.split("<time", -1)).hasSize(3); // 시작 시각과 종료 시각
@@ -82,7 +83,7 @@ class LiveEndWebTest {
         assertThat(end(live.id(), "wrong-key")).isEqualTo(403);
         assertThat(end(live.id(), null)).isEqualTo(403);
 
-        assertThat(page("/live/" + live.id())).doesNotContain("방송이 종료되었습니다");
+        assertThat(LivePages.showsEnded(page("/live/" + live.id()))).isFalse();
     }
 
     @Test
@@ -134,8 +135,37 @@ class LiveEndWebTest {
     }
 
     @Test
+    void 방송_중_시청_화면은_종료_안내를_숨겨_둔_채_두고_종료를_받으면_새로고침_없이_바꾼다() throws Exception {
+        Live live = start("제자리 전환");
+
+        String html = page("/live/" + live.id());
+
+        assertThat(html).contains("id=\"ended-view\"", "'ended'");
+        assertThat(LivePages.showsEnded(html)).isFalse();
+        assertThat(html).doesNotContain("location.reload");
+    }
+
+    @Test
+    void 방송_중_시청_화면은_연결이_끊기면_끊김_안내와_새로고침_안내를_보여_준다() throws Exception {
+        Live live = start("연결 끊김");
+
+        String html = page("/live/" + live.id());
+
+        assertThat(html).contains("ws.onclose", "ws.onerror", "연결이 끊어졌습니다", "새로고침");
+    }
+
+    @Test
+    void 송출_화면은_송출_키를_접속_주소에_싣지_않고_첫_메시지로_보낸다() throws Exception {
+        String html = page("/live/new");
+
+        assertThat(html).doesNotContain("?key=");
+        assertThat(html).contains("type: 'auth'");
+    }
+
+    @Test
     void 송출_화면의_방송_종료_버튼은_송출_키_헤더로_종료를_요청한다() throws Exception {
         String html = page("/live/new");
         assertThat(html).contains("방송 종료", "X-Broadcast-Key", "/end");
+        assertThat(html).contains("closeBroadcast()");
     }
 }

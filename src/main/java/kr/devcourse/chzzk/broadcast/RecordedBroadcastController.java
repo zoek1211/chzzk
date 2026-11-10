@@ -4,7 +4,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
-import kr.devcourse.chzzk.live.LiveBroadcastService;
 import kr.devcourse.chzzk.video.VideoStorage;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,25 +22,9 @@ public class RecordedBroadcastController {
     private final RecordedBroadcastRepository broadcasts;
     private final VideoStorage videoStorage;
 
-    private final LiveBroadcastService liveBroadcasts;
-
-    public RecordedBroadcastController(RecordedBroadcastRepository broadcasts, VideoStorage videoStorage,
-                                       LiveBroadcastService liveBroadcasts) {
+    public RecordedBroadcastController(RecordedBroadcastRepository broadcasts, VideoStorage videoStorage) {
         this.broadcasts = broadcasts;
         this.videoStorage = videoStorage;
-        this.liveBroadcasts = liveBroadcasts;
-    }
-
-    @GetMapping("/")
-    public String home() {
-        return "redirect:/broadcasts";
-    }
-
-    @GetMapping("/broadcasts")
-    public String list(Model model) {
-        model.addAttribute("liveBroadcasts", liveBroadcasts.list());
-        model.addAttribute("broadcasts", broadcasts.findAllByOrderByRegisteredAtDescIdDesc());
-        return "broadcasts/list";
     }
 
     @GetMapping("/broadcasts/new")

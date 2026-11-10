@@ -120,13 +120,36 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
     // 시청자마다 피어 연결 하나. 시청자가 들어오면 offer를 만들어 보낸다.
     var peers = {};
 
+    var ws = null;
+
+    // 방송 종료 뒤에는 시그널링 연결과 모든 시청자 피어 연결을 닫는다.
+    function closeBroadcast() {
+        Object.keys(peers).forEach(function (id) { removeViewer(id); });
+        if (ws) {
+            ws.onclose = null;
+            ws.close();
+            ws = null;
+        }
+    }
+
+    function removeViewer(viewerId) {
+        if (peers[viewerId]) {
+            peers[viewerId].close();
+            delete peers[viewerId];
+        }
+    }
+
     function signal(liveId, key) {
         var scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        var ws = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId
-            + '/broadcaster?key=' + encodeURIComponent(key));
+        // 송출 키는 주소(쿼리)에 싣지 않고, 접속 뒤 첫 메시지로 보낸다.
+        ws = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId + '/broadcaster');
+        var socket = ws;
+        socket.onopen = function () {
+            socket.send(JSON.stringify({ type: 'auth', key: key }));
+        };
 
         function send(payload) {
-            ws.send(JSON.stringify(payload));
+            socket.send(JSON.stringify(payload));
         }
 
         function addViewer(viewerId) {
@@ -145,15 +168,8 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
             });
         }
 
-        function removeViewer(viewerId) {
-            if (peers[viewerId]) {
-                peers[viewerId].close();
-                delete peers[viewerId];
-            }
-        }
-
         var queue = Promise.resolve();
-        ws.onmessage = function (event) {
+        socket.onmessage = function (event) {
             var msg = JSON.parse(event.data);
             queue = queue.then(function () {
                 var pc = peers[msg.viewerId];
@@ -168,7 +184,7 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
                 }
             }).catch(function (e) { console.warn(e); });
         };
-        ws.onclose = function () {
+        socket.onclose = function () {
             Object.keys(peers).forEach(removeViewer);
         };
     }
@@ -215,6 +231,7 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
                 show('방송을 종료하지 못했습니다. 다시 시도해 주세요.');
                 return;
             }
+            closeBroadcast();
             if (stream) {
                 stream.getTracks().forEach(function (track) { track.stop(); });
             }

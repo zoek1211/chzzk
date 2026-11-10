@@ -42,9 +42,8 @@ class ViewerCapacityTest {
                 JsonPath.read(response.body(), "$.broadcastKey")};
     }
 
-    SignalingClient broadcaster(String[] live) {
-        return SignalingClient.connect(
-                "ws://localhost:" + port + "/ws/live/" + live[0] + "/broadcaster?key=" + live[1]);
+    SignalingClient broadcaster(String[] live) throws InterruptedException {
+        return SignalingClient.authenticatedBroadcaster(port, live[0], live[1]);
     }
 
     SignalingClient viewer(String[] live) {

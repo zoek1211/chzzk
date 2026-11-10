@@ -61,6 +61,16 @@ class LiveBroadcastWebTest {
     }
 
     @Test
+    void 잘못된_제목은_400과_사용자에게_보여줄_메시지를_돌려준다() throws Exception {
+        mvc.perform(startLive("   "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("제목을 입력해 주세요."));
+        mvc.perform(startLive("가".repeat(201)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("제목은 200자 이하로 입력해 주세요."));
+    }
+
+    @Test
     void 방송_목록은_라이브_방송_섹션과_녹화방송_섹션을_함께_보여주고_라이브에는_방송_중_배지가_붙는다() throws Exception {
         String recordedUrl = mvc.perform(multipart("/broadcasts")
                         .param("title", "목록의 녹화방송")
