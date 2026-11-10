@@ -8,6 +8,7 @@
     <p class="meta">
         <span class="badge" id="status-badge" th:classappend="${live.onAir} ? 'badge-live' : 'badge-ended'"
               th:text="${live.status.label}">방송 중</span>
+        · 소유자 <span th:text="${live.owner != null} ? ${live.owner.nickname} : '소유자 없음'">닉네임</span>
         ·
         <time th:text="${#temporals.format(live.startedAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
         <span th:if="${live.endedAt != null}">
@@ -26,7 +27,7 @@
             <button type="submit" class="button button-secondary">삭제</button>
         </form>
     </th:block>
-    <section th:replace="~{fragments/comments :: comments('LIVE', ${live.id})}"></section>
+    <section th:replace="~{fragments/comments :: comments(${liveKind}, ${live.id})}"></section>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
 <script th:if="${live.onAir and currentMember != null and live.isOwnedBy(currentMember.memberId())}">

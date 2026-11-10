@@ -80,7 +80,8 @@ class CommentJsonWebTest {
                 .andExpect(jsonPath("$[0].authorNickname").value("민수"))
                 .andExpect(jsonPath("$[0].body").value("<b>첫째</b>"))
                 .andExpect(jsonPath("$[0].createdAt").isNotEmpty())
-                .andExpect(jsonPath("$[0].edited").value(false))
+                .andExpect(jsonPath("$[0].updatedAt").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$[0].mine").value(false))
                 .andExpect(jsonPath("$[0].id").isNumber())
                 .andExpect(jsonPath("$[1].body").value("둘째"));
     }

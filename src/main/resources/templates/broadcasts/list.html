@@ -19,6 +19,7 @@
                     <span class="meta">
                         <span class="badge" th:classappend="${live.onAir} ? 'badge-live' : 'badge-ended'"
                               th:text="${live.status.label}">방송 중</span>
+                        · <span th:text="${live.owner != null} ? ${live.owner.nickname} : '소유자 없음'">닉네임</span>
                         ·
                         <time th:text="${#temporals.format(live.startedAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
                     </span>
@@ -41,6 +42,7 @@
                     <strong class="card-title" th:text="${broadcast.title}">제목</strong>
                     <span class="meta">
                         <span th:text="${broadcast.videoSource.name() == 'UPLOADED'} ? '업로드 영상' : '외부 영상'">업로드 영상</span>
+                        · <span th:text="${broadcast.owner != null} ? ${broadcast.owner.nickname} : '소유자 없음'">닉네임</span>
                         ·
                         <time th:text="${#temporals.format(broadcast.registeredAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
                     </span>

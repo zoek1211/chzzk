@@ -7,9 +7,12 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import java.time.Instant;
+import kr.devcourse.chzzk.member.Member;
 
-/** 라이브 방송: 방송자가 지금 내보내는 방송. 소유자(회원 id)는 회원 기능 이전에 만들어진 방송에서는 없다. */
+/** 라이브 방송: 방송자가 지금 내보내는 방송. 소유자(회원)는 회원 기능 이전에 만들어진 방송에서는 없다. */
 @Entity
 public class LiveBroadcast {
 
@@ -24,8 +27,10 @@ public class LiveBroadcast {
     @Column(nullable = false, length = 20)
     private LiveStatus status;
 
-    /** 소유자 회원의 id. 회원 기능 이전에 만들어진 라이브는 null(누구도 관리할 수 없다). */
-    private Long ownerId;
+    /** 소유자 회원. 회원 기능 이전에 만들어진 라이브는 null(누구도 관리할 수 없다). */
+    @ManyToOne
+    @JoinColumn(name = "owner_id")
+    private Member owner;
 
     @Column(nullable = false)
     private Instant startedAt;
@@ -49,10 +54,10 @@ public class LiveBroadcast {
         return trimmed;
     }
 
-    LiveBroadcast(String title, Long ownerId) {
+    LiveBroadcast(String title, Member owner) {
         this.title = title;
         this.status = LiveStatus.ON_AIR;
-        this.ownerId = ownerId;
+        this.owner = owner;
         this.startedAt = Instant.now();
     }
 
@@ -68,7 +73,11 @@ public class LiveBroadcast {
 
     /** 이 회원이 소유자인가. 소유자가 없는 라이브는 누구에게도 false. */
     public boolean isOwnedBy(Long memberId) {
-        return ownerId != null && ownerId.equals(memberId);
+        return owner != null && memberId != null && owner.getId().equals(memberId);
+    }
+
+    public Member getOwner() {
+        return owner;
     }
 
     public Long getId() {

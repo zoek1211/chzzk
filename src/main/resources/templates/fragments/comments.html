@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <body>
-<!-- 사용: <section th:replace="~{fragments/comments :: comments('RECORDED', ${broadcast.id})}"></section> (kind: RECORDED | LIVE) -->
+<!-- 사용: <section th:replace="~{fragments/comments :: comments(${recordedKind}, ${broadcast.id})}"></section> (kind: BroadcastKind) -->
 <section th:fragment="comments(kind, broadcastId)" id="comments" class="comments"
-         th:with="commentList=${@commentService.list(kind, broadcastId)}"
-         th:attr="data-kind=${kind},data-broadcast-id=${broadcastId},data-member-id=${currentMember != null ? currentMember.memberId() : ''}">
+         th:with="commentList=${@commentService.list(kind, broadcastId, currentMember?.memberId())}"
+         th:attr="data-kind=${kind.name()},data-broadcast-id=${broadcastId}">
     <h2>댓글 <span class="meta comment-count" th:text="${#lists.size(commentList)}">0</span></h2>
     <ul class="comment-list">
         <li th:each="c : ${commentList}" class="comment" th:attr="data-comment-id=${c.id}">
             <strong class="comment-author" th:text="${c.authorNickname}">닉네임</strong>
-            <time class="meta" th:text="${#temporals.format(c.createdAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')} + (${c.edited} ? ' (수정됨)' : '')">2026-01-01</time>
+            <time class="meta" th:text="${#temporals.format(c.createdAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')} + (${c.updatedAt != null} ? ' (수정됨 · ' + ${#temporals.format(c.updatedAt, 'HH:mm', 'Asia/Seoul')} + ')' : '')">2026-01-01</time>
             <p class="comment-body" th:text="${c.body}">본문</p>
-            <div class="comment-actions" th:if="${currentMember != null and currentMember.memberId() == c.authorId}">
+            <div class="comment-actions" th:if="${c.mine}">
                 <details class="comment-edit">
                     <summary>수정</summary>
                     <form method="post" class="form" th:action="@{/comments/{id}/edit(id=${c.id})}">
@@ -27,7 +27,7 @@
     </ul>
     <p class="empty comment-empty" th:hidden="${!#lists.isEmpty(commentList)}">아직 댓글이 없습니다.</p>
     <form th:if="${currentMember != null}" method="post" class="form comment-form"
-          th:action="${kind == 'LIVE'} ? @{/live/{id}/comments(id=${broadcastId})} : @{/broadcasts/{id}/comments(id=${broadcastId})}">
+          th:action="${kind.name() == 'LIVE'} ? @{/live/{id}/comments(id=${broadcastId})} : @{/broadcasts/{id}/comments(id=${broadcastId})}">
         <label>
             댓글 쓰기
             <textarea name="body" rows="3" maxlength="500" required></textarea>
@@ -38,7 +38,7 @@
         <a th:href="@{/login}">로그인하면 댓글을 쓸 수 있습니다</a>
     </p>
     <!-- 라이브 시청 화면: 5초마다 JSON 목록을 읽어 제자리에서 다시 그린다. 사용자 글은 textContent로만 넣는다. 방송이 끝나도 계속 동작한다. -->
-    <script th:if="${kind == 'LIVE'}" th:inline="none">
+    <script th:if="${kind.name() == 'LIVE'}" th:inline="none">
         (function () {
             var root = document.getElementById('comments');
             var list = root.querySelector('.comment-list');
@@ -46,7 +46,6 @@
             var empty = root.querySelector('.comment-empty');
             var url = '/live/' + root.dataset.broadcastId + '/comments';
             var last = null;
-            var meId = root.dataset.memberId;
             var csrf = document.querySelector('meta[name="_csrf"]');
             function hidden(name, value) {
                 var input = document.createElement('input');
@@ -97,6 +96,9 @@
                 timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
                 hour: '2-digit', minute: '2-digit', hour12: false
             });
+            var timeOnly = new Intl.DateTimeFormat('ko-KR', {
+                timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false
+            });
             function render(items) {
                 var sig = JSON.stringify(items);
                 if (sig === last) { return; }
@@ -111,12 +113,13 @@
                     who.textContent = c.authorNickname;
                     var time = document.createElement('time');
                     time.className = 'meta';
-                    time.textContent = fmt.format(new Date(c.createdAt)) + (c.edited ? ' (수정됨)' : '');
+                    time.textContent = fmt.format(new Date(c.createdAt))
+                        + (c.updatedAt ? ' (수정됨 · ' + timeOnly.format(new Date(c.updatedAt)) + ')' : '');
                     var body = document.createElement('p');
                     body.className = 'comment-body';
                     body.textContent = c.body;
                     li.append(who, ' ', time, body);
-                    if (meId && String(c.authorId) === meId) { li.append(actions(c)); }
+                    if (c.mine) { li.append(actions(c)); }
                     list.appendChild(li);
                 });
                 count.textContent = items.length;

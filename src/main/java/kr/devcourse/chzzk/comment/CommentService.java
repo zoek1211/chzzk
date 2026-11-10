@@ -3,27 +3,32 @@ package kr.devcourse.chzzk.comment;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.List;
-import kr.devcourse.chzzk.broadcast.RecordedBroadcastRepository;
 import kr.devcourse.chzzk.broadcast.RecordedBroadcastDeleted;
+import kr.devcourse.chzzk.broadcast.RecordedBroadcastRepository;
 import kr.devcourse.chzzk.live.LiveBroadcastRepository;
 import kr.devcourse.chzzk.live.LiveDeleted;
 import kr.devcourse.chzzk.member.Member;
 import org.springframework.context.event.EventListener;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
- * 댓글 모듈의 공개 인터페이스. 수정·삭제는 같은 모듈에 이어서 붙인다(작성자 판단은 작성자 id로).
+ * 댓글 모듈의 공개 인터페이스: 목록·작성·수정·삭제(수정·삭제는 작성자만).
  * 화면은 Thymeleaf에서 {@code @commentService.list(...)}로 목록을 읽는다.
  */
 @Service
 public class CommentService {
 
-    /** 화면에 보이는 댓글 한 건. */
-    public record CommentView(Long id, Long authorId, String authorNickname, String body, Instant createdAt,
-                              boolean edited) {
+    /**
+     * 화면과 JSON이 함께 쓰는 댓글 한 건. {@code updatedAt}은 수정된 적이 없으면 null,
+     * {@code mine}은 목록을 읽는 회원이 작성자인지(회원 id는 밖으로 내지 않는다).
+     */
+    public record CommentView(Long id, String authorNickname, String body, Instant createdAt, Instant updatedAt,
+                              boolean mine) {
+    }
+
+    /** 수정·삭제가 끝난 댓글이 달린 방송(화면으로 돌아가는 데 쓴다). */
+    public record Target(BroadcastKind kind, Long broadcastId) {
     }
 
     private final CommentRepository comments;
@@ -39,47 +44,38 @@ public class CommentService {
         this.entityManager = entityManager;
     }
 
-    /** 방송의 댓글을 오래된 순으로 돌려준다. 누구나 읽을 수 있다. */
+    /** 방송의 댓글을 오래된 순으로 돌려준다. 누구나 읽을 수 있고, {@code viewerId}(비로그인이면 null)의 댓글은 mine이 된다. */
     @Transactional(readOnly = true)
-    public List<CommentView> list(BroadcastKind kind, Long broadcastId) {
+    public List<CommentView> list(BroadcastKind kind, Long broadcastId, Long viewerId) {
         return comments.findOldestFirst(kind, broadcastId).stream()
-                .map(c -> new CommentView(c.getId(), c.getAuthor().getId(), c.getAuthor().getNickname(),
-                        c.getBody(), c.getCreatedAt(), c.getUpdatedAt() != null))
+                .map(c -> view(c, viewerId))
                 .toList();
     }
 
-    /** {@link #list(BroadcastKind, Long)}와 같지만 없는 방송이면 404. */
+    /** {@link #list}와 같지만 없는 방송이면 {@link BroadcastNotFoundException}. */
     @Transactional(readOnly = true)
-    public List<CommentView> listExisting(BroadcastKind kind, Long broadcastId) {
-        if (!broadcastExists(kind, broadcastId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        }
-        return list(kind, broadcastId);
+    public List<CommentView> listExisting(BroadcastKind kind, Long broadcastId, Long viewerId) {
+        requireBroadcast(kind, broadcastId);
+        return list(kind, broadcastId, viewerId);
     }
 
-    /** 템플릿에서 문자열 종류로 부르기 위한 편의 메서드. */
-    @Transactional(readOnly = true)
-    public List<CommentView> list(String kind, Long broadcastId) {
-        return list(BroadcastKind.valueOf(kind), broadcastId);
-    }
-
-    /** 회원이 방송에 댓글을 단다. 없는 방송이면 404, 본문 규칙 위반이면 {@link InvalidCommentException}. */
+    /** 회원이 방송에 댓글을 단다. 없는 방송이면 {@link BroadcastNotFoundException}, 본문 규칙 위반이면 {@link InvalidCommentException}. */
     @Transactional
     public CommentView add(BroadcastKind kind, Long broadcastId, Long memberId, String body) {
-        if (!broadcastExists(kind, broadcastId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        }
+        requireBroadcast(kind, broadcastId);
         String validBody = validBody(body);
         Member author = entityManager.getReference(Member.class, memberId);
         Comment saved = comments.save(new Comment(kind, broadcastId, author, validBody));
-        return new CommentView(saved.getId(), memberId, author.getNickname(), saved.getBody(), saved.getCreatedAt(), false);
+        return view(saved, memberId);
     }
 
-    /** 수정·삭제가 끝난 댓글이 달린 방송(화면으로 돌아가는 데 쓴다). */
-    public record Target(BroadcastKind kind, Long broadcastId) {
-    }
-
-    /** 작성자만 댓글을 고칠 수 있다. 없으면 404, 작성자가 아니면 403, 본문 규칙 위반이면 {@link InvalidCommentException}. */
+    /**
+     * 작성자만 댓글을 고칠 수 있다.
+     *
+     * @throws CommentNotFoundException 없는 댓글
+     * @throws NotCommentAuthorException 작성자가 아님
+     * @throws InvalidCommentException 본문 규칙 위반
+     */
     @Transactional
     public Target edit(Long commentId, Long memberId, String body) {
         Comment comment = authoredComment(commentId, memberId);
@@ -87,7 +83,12 @@ public class CommentService {
         return new Target(comment.getKind(), comment.getBroadcastId());
     }
 
-    /** 작성자만 댓글을 지울 수 있다. 없으면 404, 작성자가 아니면 403. */
+    /**
+     * 작성자만 댓글을 지울 수 있다.
+     *
+     * @throws CommentNotFoundException 없는 댓글
+     * @throws NotCommentAuthorException 작성자가 아님
+     */
     @Transactional
     public Target delete(Long commentId, Long memberId) {
         Comment comment = authoredComment(commentId, memberId);
@@ -96,10 +97,9 @@ public class CommentService {
     }
 
     private Comment authoredComment(Long commentId, Long memberId) {
-        Comment comment = comments.findById(commentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        Comment comment = comments.findById(commentId).orElseThrow(CommentNotFoundException::new);
         if (!comment.getAuthor().getId().equals(memberId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+            throw new NotCommentAuthorException();
         }
         return comment;
     }
@@ -115,11 +115,20 @@ public class CommentService {
         comments.deleteByBroadcast(BroadcastKind.LIVE, event.liveId());
     }
 
-    private boolean broadcastExists(BroadcastKind kind, Long id) {
-        return switch (kind) {
+    /** 방송이 없으면 {@link BroadcastNotFoundException}. 댓글을 읽거나 달기 전에 공통으로 거친다. */
+    private void requireBroadcast(BroadcastKind kind, Long id) {
+        boolean exists = switch (kind) {
             case RECORDED -> recorded.existsById(id);
             case LIVE -> live.existsById(id);
         };
+        if (!exists) {
+            throw new BroadcastNotFoundException();
+        }
+    }
+
+    private static CommentView view(Comment c, Long viewerId) {
+        return new CommentView(c.getId(), c.getAuthor().getNickname(), c.getBody(), c.getCreatedAt(),
+                c.getUpdatedAt(), c.getAuthor().getId().equals(viewerId));
     }
 
     private static String validBody(String body) {

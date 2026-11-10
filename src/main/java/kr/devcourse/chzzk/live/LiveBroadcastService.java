@@ -1,7 +1,9 @@
 package kr.devcourse.chzzk.live;
 
+import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Optional;
+import kr.devcourse.chzzk.member.Member;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,10 +13,13 @@ public class LiveBroadcastService {
 
     private final LiveBroadcastRepository broadcasts;
     private final ApplicationEventPublisher events;
+    private final EntityManager entityManager;
 
-    public LiveBroadcastService(LiveBroadcastRepository broadcasts, ApplicationEventPublisher events) {
+    public LiveBroadcastService(LiveBroadcastRepository broadcasts, ApplicationEventPublisher events,
+                                EntityManager entityManager) {
         this.broadcasts = broadcasts;
         this.events = events;
+        this.entityManager = entityManager;
     }
 
     /**
@@ -27,7 +32,7 @@ public class LiveBroadcastService {
         if (broadcasts.existsByOwnerIdAndStatus(ownerId, LiveStatus.ON_AIR)) {
             throw new LiveConflictException("이미 방송 중인 라이브가 있습니다. 종료한 뒤 다시 시작해 주세요.");
         }
-        LiveBroadcast saved = broadcasts.save(new LiveBroadcast(validTitle, ownerId));
+        LiveBroadcast saved = broadcasts.save(new LiveBroadcast(validTitle, entityManager.getReference(Member.class, ownerId)));
         events.publishEvent(new LiveStarted(saved.getId()));
         return new StartedLive(saved.getId());
     }
@@ -45,7 +50,7 @@ public class LiveBroadcastService {
      */
     @Transactional
     public void end(Long id, Long memberId) {
-        endAndAnnounce(ownedBy(id, memberId));
+        endAndAnnounce(findOwned(id, memberId));
     }
 
     /**
@@ -57,7 +62,7 @@ public class LiveBroadcastService {
      */
     @Transactional
     public void delete(Long id, Long memberId) {
-        LiveBroadcast broadcast = ownedBy(id, memberId);
+        LiveBroadcast broadcast = findOwned(id, memberId);
         if (broadcast.isOnAir()) {
             throw new LiveConflictException("방송 중인 라이브는 삭제할 수 없습니다. 먼저 종료해 주세요.");
         }
@@ -65,7 +70,8 @@ public class LiveBroadcastService {
         events.publishEvent(new LiveDeleted(id));
     }
 
-    private LiveBroadcast ownedBy(Long id, Long memberId) {
+    /** 방송을 찾아 소유자인지 확인한다. 없으면 {@link LiveNotFoundException}, 소유자가 아니면 {@link NotLiveOwnerException}. */
+    private LiveBroadcast findOwned(Long id, Long memberId) {
         LiveBroadcast broadcast = broadcasts.findById(id).orElseThrow(LiveNotFoundException::new);
         if (!broadcast.isOwnedBy(memberId)) {
             throw new NotLiveOwnerException();

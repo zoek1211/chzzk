@@ -1,6 +1,7 @@
 package kr.devcourse.chzzk;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -78,18 +79,18 @@ class CommentEditDeleteWebTest {
 
         mvc.perform(get(recordedPath() + "/comments"))
                 .andExpect(jsonPath("$[0].body").value("고친 글"))
-                .andExpect(jsonPath("$[0].edited").value(true));
+                .andExpect(jsonPath("$[0].updatedAt").isNotEmpty());
         mvc.perform(get(recordedPath()))
                 .andExpect(content().string(containsString("고친 글")))
-                .andExpect(content().string(containsString("(수정됨)")));
+                .andExpect(content().string(matchesPattern("(?s).*\\(수정됨 · \\d{2}:\\d{2}\\).*")));
     }
 
     @Test
-    void 수정하지_않은_댓글은_edited가_false이고_수정됨이_보이지_않는다() throws Exception {
+    void 수정하지_않은_댓글은_updatedAt이_비고_수정됨이_보이지_않는다() throws Exception {
         comment(recordedPath(), author, "그대로");
-        mvc.perform(get(recordedPath() + "/comments")).andExpect(jsonPath("$[0].edited").value(false));
+        mvc.perform(get(recordedPath() + "/comments")).andExpect(jsonPath("$[0].updatedAt").value(org.hamcrest.Matchers.nullValue()));
         mvc.perform(get(recordedPath()))
-                .andExpect(content().string(not(containsString("(수정됨)</"))));
+                .andExpect(content().string(not(containsString("(수정됨"))));
     }
 
     @Test
@@ -102,7 +103,7 @@ class CommentEditDeleteWebTest {
                 .andExpect(status().isBadRequest());
         mvc.perform(post("/comments/" + id + "/edit").session(author).param("body", "가".repeat(500)))
                 .andExpect(status().is3xxRedirection());
-        mvc.perform(get(recordedPath() + "/comments")).andExpect(jsonPath("$[0].edited").value(true));
+        mvc.perform(get(recordedPath() + "/comments")).andExpect(jsonPath("$[0].updatedAt").isNotEmpty());
     }
 
     @Test
@@ -115,7 +116,7 @@ class CommentEditDeleteWebTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get(recordedPath() + "/comments"))
                 .andExpect(jsonPath("$[0].body").value("원래 글"))
-                .andExpect(jsonPath("$[0].edited").value(false));
+                .andExpect(jsonPath("$[0].updatedAt").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test
@@ -186,12 +187,28 @@ class CommentEditDeleteWebTest {
     }
 
     @Test
+    void 댓글_JSON은_회원_id를_싣지_않고_요청한_회원의_mine만_알려_준다() throws Exception {
+        comment(recordedPath(), author, "내 글");
+
+        mvc.perform(get(recordedPath() + "/comments").session(author))
+                .andExpect(jsonPath("$[0].mine").value(true))
+                .andExpect(jsonPath("$[0].authorId").doesNotExist());
+        mvc.perform(get(recordedPath() + "/comments").session(other))
+                .andExpect(jsonPath("$[0].mine").value(false));
+        mvc.perform(get(recordedPath() + "/comments"))
+                .andExpect(jsonPath("$[0].mine").value(false));
+        mvc.perform(get(recordedPath()).session(author))
+                .andExpect(content().string(not(containsString("data-member-id"))));
+    }
+
+    @Test
     void 라이브_폴링_렌더러는_작성자_버튼과_수정됨을_textContent로_그린다() throws Exception {
         String liveId = mvc.perform(post("/live").session(owner).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"라이브\"}"))
                 .andReturn().getResponse().getContentAsString().replaceAll(".*\"id\":(\\d+).*", "$1");
         mvc.perform(get("/live/" + liveId).session(author))
-                .andExpect(content().string(containsString("data-member-id")))
+                .andExpect(content().string(not(containsString("data-member-id"))))
+                .andExpect(content().string(containsString("c.mine")))
                 .andExpect(content().string(containsString("/delete")))
                 .andExpect(content().string(not(containsString("innerHTML"))));
     }
