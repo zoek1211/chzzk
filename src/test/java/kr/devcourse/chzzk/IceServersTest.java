@@ -12,19 +12,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /** ICE 서버(STUN 기본값, 선택적 TURN) 설정이 송출·시청 화면에 내려가는지 확인한다. */
 class IceServersTest {
 
     static String render(WebApplicationContext context, String path) throws Exception {
-        MockMvc mvc = MockMvcBuilders.webAppContextSetup(context).build();
+        MockMvc mvc = TestWeb.mvc(context);
         return mvc.perform(get(path)).andReturn().getResponse().getContentAsString();
     }
 
     static String liveId(WebApplicationContext context) throws Exception {
-        MockMvc mvc = MockMvcBuilders.webAppContextSetup(context).build();
+        MockMvc mvc = TestWeb.mvc(context);
         String body = mvc.perform(LiveBroadcastWebTest.startLive("ICE 확인"))
                 .andReturn().getResponse().getContentAsString();
         return LiveBroadcastWebTest.startedId(body);

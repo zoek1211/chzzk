@@ -37,7 +37,7 @@ class LiveJoinTimeoutTest {
 
     String[] startLive() throws Exception {
         HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live"))
+                TestWeb.withCsrf(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live")))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"유예 시간\"}"))
                         .build(),

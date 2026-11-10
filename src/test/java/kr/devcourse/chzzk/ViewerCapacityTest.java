@@ -33,7 +33,7 @@ class ViewerCapacityTest {
 
     String[] startLive() throws Exception {
         HttpResponse<String> response = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live"))
+                TestWeb.withCsrf(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live")))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"정원\"}"))
                         .build(),

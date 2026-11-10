@@ -13,7 +13,6 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /** 같은 데이터 디렉터리로 애플리케이션을 다시 띄웠을 때 등록 정보와 업로드 영상이 남아 있는지. */
@@ -59,6 +58,6 @@ class RestartPersistenceTest {
     }
 
     private static MockMvc mvcOf(ConfigurableApplicationContext context) {
-        return MockMvcBuilders.webAppContextSetup((WebApplicationContext) context).build();
+        return TestWeb.mvc((WebApplicationContext) context);
     }
 }

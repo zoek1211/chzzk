@@ -33,6 +33,15 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
 </script>
 <script>
 (function () {
+    function csrfHeaders(headers) {
+        var token = document.querySelector('meta[name="_csrf"]');
+        var name = document.querySelector('meta[name="_csrf_header"]');
+        if (token && name) {
+            headers[name.content] = token.content;
+        }
+        return headers;
+    }
+
     var message = document.getElementById('message');
     var preview = document.getElementById('preview');
     var form = document.getElementById('start-form');
@@ -198,7 +207,7 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
         }
         fetch('/live', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ title: form.title.value })
         }).then(function (response) {
             return response.json().then(function (body) {
@@ -224,7 +233,7 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
         endButton.disabled = true;
         fetch('/live/' + liveId + '/end', {
             method: 'POST',
-            headers: { 'X-Broadcast-Key': window.broadcastKey }
+            headers: csrfHeaders({ 'X-Broadcast-Key': window.broadcastKey })
         }).then(function (response) {
             if (!response.ok) {
                 endButton.disabled = false;

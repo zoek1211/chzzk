@@ -16,7 +16,6 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /** 같은 데이터 디렉터리로 애플리케이션을 다시 띄웠을 때 라이브 방송 정보가 남아 있는지. */
@@ -71,7 +70,8 @@ class LiveRestartPersistenceTest {
             endedId = ended[0];
             mvc.perform(post("/live/" + endedId + "/end").header("X-Broadcast-Key", ended[1]))
                     .andExpect(status().isOk());
-            endedHtmlBefore = mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString();
+            endedHtmlBefore = TestWeb.withoutCsrfMeta(
+                    mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString());
             assertThat(LivePages.showsEnded(
                     mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())).isFalse();
         }
@@ -82,7 +82,8 @@ class LiveRestartPersistenceTest {
             MockMvc mvc = mvcOf(second);
             assertThat(LivePages.showsEnded(
                     mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())).isTrue();
-            assertThat(mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString())
+            assertThat(TestWeb.withoutCsrfMeta(
+                    mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString()))
                     .isEqualTo(endedHtmlBefore);
         }
     }
@@ -131,6 +132,6 @@ class LiveRestartPersistenceTest {
     }
 
     private static MockMvc mvcOf(ConfigurableApplicationContext context) {
-        return MockMvcBuilders.webAppContextSetup((WebApplicationContext) context).build();
+        return TestWeb.mvc((WebApplicationContext) context);
     }
 }

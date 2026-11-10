@@ -39,7 +39,7 @@ class LiveEndSignalingTest {
 
     Live startLive() throws Exception {
         HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live"))
+                TestWeb.withCsrf(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live")))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"종료 테스트\"}"))
                         .build(),
@@ -95,7 +95,7 @@ class LiveEndSignalingTest {
         try (SignalingClient broadcaster = broadcaster(live); SignalingClient viewer = viewer(live)) {
             broadcaster.next("$.type");
 
-            http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id() + "/end"))
+            http.send(TestWeb.withCsrf(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id() + "/end")))
                     .header("X-Broadcast-Key", live.key())
                     .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.discarding());
 

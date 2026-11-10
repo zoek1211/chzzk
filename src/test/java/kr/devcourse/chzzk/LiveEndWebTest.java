@@ -16,7 +16,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 @SpringBootTest
@@ -37,7 +36,7 @@ class LiveEndWebTest {
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.webAppContextSetup(context).build();
+        mvc = TestWeb.mvc(context);
     }
 
     record Live(String id, String key) {
@@ -104,12 +103,12 @@ class LiveEndWebTest {
     void 이미_종료된_라이브를_다시_종료해도_성공하고_종료_시각은_바뀌지_않는다() throws Exception {
         Live live = start("두 번 끝내는 라이브");
         assertThat(end(live.id(), live.key())).isEqualTo(200);
-        String before = page("/live/" + live.id());
+        String before = TestWeb.withoutCsrfMeta(page("/live/" + live.id()));
         Thread.sleep(1100);
 
         assertThat(end(live.id(), live.key())).isEqualTo(200);
 
-        assertThat(page("/live/" + live.id())).isEqualTo(before);
+        assertThat(TestWeb.withoutCsrfMeta(page("/live/" + live.id()))).isEqualTo(before);
     }
 
     @Test
