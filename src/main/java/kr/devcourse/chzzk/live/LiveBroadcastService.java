@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import kr.devcourse.chzzk.broadcast.RecordedBroadcast;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class LiveBroadcastService {
@@ -37,6 +38,45 @@ public class LiveBroadcastService {
                 broadcasts.findAllByStatusOrderByStartedAtDescIdDesc(LiveStatus.ON_AIR));
         all.addAll(broadcasts.findAllByStatusOrderByStartedAtDescIdDesc(LiveStatus.ENDED));
         return all;
+    }
+
+    /**
+     * 송출 키로 라이브 방송을 종료한다. 이미 종료면 아무것도 바꾸지 않고 성공한다.
+     *
+     * @throws LiveNotFoundException 없는 라이브 방송
+     * @throws InvalidBroadcastKeyException 송출 키가 없거나 틀림(방송 상태는 그대로)
+     */
+    @Transactional
+    public void end(Long id, String broadcastKey) {
+        LiveBroadcast broadcast = broadcasts.findById(id).orElseThrow(LiveNotFoundException::new);
+        if (!isValidKey(broadcast, broadcastKey)) {
+            throw new InvalidBroadcastKeyException();
+        }
+        broadcast.end();
+    }
+
+    /** 송출 키가 그 라이브 방송의 것인지. 없는 방송이면 false. (송출 접속 검증용) */
+    @Transactional(readOnly = true)
+    public boolean verifyBroadcastKey(Long id, String broadcastKey) {
+        return broadcasts.findById(id).map(b -> isValidKey(b, broadcastKey)).orElse(false);
+    }
+
+    /** 방송자 연결이 끊겨 송출 키 없이 종료한다. 없거나 이미 종료면 아무 일도 없다. 내부(시그널링)용. */
+    @Transactional
+    public void endByDisconnect(Long id) {
+        broadcasts.findById(id).ifPresent(LiveBroadcast::end);
+    }
+
+    /** 서비스가 다시 시작될 때 남아 있는 방송 중 라이브 방송을 모두 종료로 바꾼다. */
+    @Transactional
+    public int endAllOnAir() {
+        List<LiveBroadcast> onAir = broadcasts.findAllByStatus(LiveStatus.ON_AIR);
+        onAir.forEach(LiveBroadcast::end);
+        return onAir.size();
+    }
+
+    private static boolean isValidKey(LiveBroadcast broadcast, String broadcastKey) {
+        return broadcastKey != null && !broadcastKey.isBlank() && broadcast.matchesKeyHash(hash(broadcastKey));
     }
 
     public Optional<LiveBroadcast> find(Long id) {

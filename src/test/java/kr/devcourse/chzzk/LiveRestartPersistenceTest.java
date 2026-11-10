@@ -58,8 +58,45 @@ class LiveRestartPersistenceTest {
         }
     }
 
+    @Test
+    void 재시작하면_방송_중이던_라이브_방송은_종료로_보이고_이미_종료된_것의_종료_시각은_그대로다() throws Exception {
+        String onAirId;
+        String endedId;
+        String endedHtmlBefore;
+
+        try (ConfigurableApplicationContext first = start()) {
+            MockMvc mvc = mvcOf(first);
+            onAirId = startLive(mvc, "재시작에 끝날 라이브")[0];
+            String[] ended = startLive(mvc, "미리 끝낸 라이브");
+            endedId = ended[0];
+            mvc.perform(post("/live/" + endedId + "/end").header("X-Broadcast-Key", ended[1]))
+                    .andExpect(status().isOk());
+            endedHtmlBefore = mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString();
+            assertThat(mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())
+                    .doesNotContain("방송이 종료되었습니다");
+        }
+
+        Thread.sleep(1100);
+
+        try (ConfigurableApplicationContext second = start()) {
+            MockMvc mvc = mvcOf(second);
+            assertThat(mvc.perform(get("/live/" + onAirId)).andReturn().getResponse().getContentAsString())
+                    .contains("방송이 종료되었습니다");
+            assertThat(mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString())
+                    .isEqualTo(endedHtmlBefore);
+        }
+    }
+
+    private static String[] startLive(MockMvc mvc, String title) throws Exception {
+        String body = mvc.perform(post("/live")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"" + title + "\"}"))
+                .andReturn().getResponse().getContentAsString();
+        return new String[]{String.valueOf((Integer) JsonPath.read(body, "$.id")), JsonPath.read(body, "$.broadcastKey")};
+    }
+
     private static String startedAtOf(String html) {
-        return html.replaceAll("(?s).*<time[^>]*>([^<]+)</time>.*", "$1");
+        return html.replaceAll("(?s).*?<time[^>]*>([^<]+)</time>.*", "$1");
     }
 
     private boolean dataFilesContain(String text) throws Exception {
