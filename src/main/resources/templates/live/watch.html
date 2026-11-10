@@ -16,6 +16,7 @@
     </p>
     <div class="player" th:if="${live.onAir}">
         <video id="player" autoplay playsinline controls></video>
+        <button type="button" class="button unmute-button" id="unmute-button" hidden>음소거 해제</button>
     </div>
     <p class="empty" id="status" th:if="${live.onAir}">방송 연결 중...</p>
     <p class="empty" th:unless="${live.onAir}">방송이 종료되었습니다.</p>
@@ -47,8 +48,17 @@
         player.play().catch(function () {
             player.muted = true;
             player.play();
+            unmuteButton.hidden = false;
         });
     };
+    var unmuteButton = document.getElementById('unmute-button');
+    unmuteButton.addEventListener('click', function () {
+        player.muted = false;
+        unmuteButton.hidden = true;
+    });
+    player.addEventListener('volumechange', function () {
+        if (!player.muted) { unmuteButton.hidden = true; }
+    });
 
     // 방송이 끝나면 영상을 멈추고 종료 안내를 보여 준다.
     function showEnded() {
