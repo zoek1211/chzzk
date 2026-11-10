@@ -58,6 +58,12 @@ public class LiveBroadcast {
         return status == LiveStatus.ON_AIR;
     }
 
+    boolean matchesKeyHash(String hash) {
+        return java.security.MessageDigest.isEqual(
+                broadcastKeyHash.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                hash.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
     public Instant getStartedAt() {
         return startedAt;
     }

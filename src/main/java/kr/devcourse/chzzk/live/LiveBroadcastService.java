@@ -43,6 +43,14 @@ public class LiveBroadcastService {
         return broadcasts.findById(id);
     }
 
+    /** 방송 중인 라이브 방송이고 송출 키가 맞으면 true. */
+    public boolean acceptsBroadcaster(Long id, String broadcastKey) {
+        return broadcastKey != null && broadcasts.findById(id)
+                .filter(LiveBroadcast::isOnAir)
+                .filter(b -> b.matchesKeyHash(hash(broadcastKey)))
+                .isPresent();
+    }
+
     private static String newBroadcastKey() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
