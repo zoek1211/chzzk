@@ -10,7 +10,6 @@
     <h1 th:text="${broadcast.title}">제목</h1>
     <p class="meta">
         <span th:text="${broadcast.videoSource.name() == 'UPLOADED'} ? '업로드 영상' : '외부 영상'">업로드 영상</span>
-        ·
         · 소유자 <span th:text="${broadcast.owner != null} ? ${broadcast.owner.nickname} : '알 수 없음'">닉네임</span>
         ·
         <time th:text="${#temporals.format(broadcast.registeredAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
@@ -22,6 +21,7 @@
             <button type="submit" class="button button-secondary">삭제</button>
         </form>
     </div>
+    <section th:replace="~{fragments/comments :: comments('RECORDED', ${broadcast.id})}"></section>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
 </body>
