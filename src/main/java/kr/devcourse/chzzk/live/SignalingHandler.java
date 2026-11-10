@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -39,8 +40,11 @@ class SignalingHandler extends TextWebSocketHandler {
     private final ObjectMapper json;
     private final Map<Long, Room> rooms = new ConcurrentHashMap<>();
 
-    SignalingHandler(ObjectMapper json) {
+    private final int viewerCapacity;
+
+    SignalingHandler(ObjectMapper json, @Value("${chzzk.live.viewer-capacity:5}") int viewerCapacity) {
         this.json = json;
+        this.viewerCapacity = viewerCapacity;
     }
 
     /** 라이브 방송 하나의 방. 이후 단계(정원, 종료)에서 확장한다. */
@@ -66,7 +70,14 @@ class SignalingHandler extends TextWebSocketHandler {
                 send(session, event("viewer-joined", viewerId));
             }
         } else {
-            room.viewers.put(raw.getId(), session);
+            synchronized (room) {
+                if (room.viewers.size() >= viewerCapacity) {
+                    send(session, "{\"type\":\"full\"}");
+                    session.close(CloseStatus.POLICY_VIOLATION.withReason("시청 정원이 가득 찼습니다"));
+                    return;
+                }
+                room.viewers.put(raw.getId(), session);
+            }
             WebSocketSession broadcaster = room.broadcaster;
             if (broadcaster != null) {
                 send(broadcaster, event("viewer-joined", raw.getId()));

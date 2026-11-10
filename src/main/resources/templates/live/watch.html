@@ -54,6 +54,10 @@
     var queue = Promise.resolve();
     ws.onmessage = function (event) {
         var msg = JSON.parse(event.data);
+        if (msg.type === 'full') {
+            status.textContent = '시청자가 가득 찼습니다';
+            return;
+        }
         queue = queue.then(function () {
             if (msg.type === 'offer') {
                 return pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp }).then(function () {
