@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## 과제 단계 진행
+
+치지직 과제의 다음 단계를 진행하거나 제출할 때는 `docs/agents/assignment-workflow.md`를 따른다.
+
 ## Agent skills
 
 ### Issue tracker
