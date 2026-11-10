@@ -2,12 +2,8 @@ package kr.devcourse.chzzk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.jayway.jsonpath.JsonPath;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,19 +27,19 @@ class ViewerCapacityTest {
     @LocalServerPort
     int port;
 
+    TestLogin.Http owner;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        owner = TestLogin.member(port);
+    }
+
     String[] startLive() throws Exception {
-        HttpResponse<String> response = HttpClient.newHttpClient().send(
-                TestWeb.withCsrf(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live")))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"정원\"}"))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        return new String[] {String.valueOf((Object) JsonPath.read(response.body(), "$.id")),
-                JsonPath.read(response.body(), "$.broadcastKey")};
+        return new String[] {owner.startedLiveId("정원")};
     }
 
     SignalingClient broadcaster(String[] live) throws InterruptedException {
-        return SignalingClient.authenticatedBroadcaster(port, live[0], live[1]);
+        return SignalingClient.broadcaster(port, live[0], owner);
     }
 
     SignalingClient viewer(String[] live) {
@@ -91,8 +87,9 @@ class ViewerCapacityTest {
     @Test
     void 정원은_방송마다_따로_센다() throws Exception {
         String[] full = startLive();
-        String[] other = startLive();
-        try (SignalingClient b = broadcaster(other);
+        TestLogin.Http otherOwner = TestLogin.member(port);
+        String[] other = {otherOwner.startedLiveId("다른 정원")};
+        try (SignalingClient b = SignalingClient.broadcaster(port, other[0], otherOwner);
                 SignalingClient a1 = viewer(full);
                 SignalingClient a2 = viewer(full);
                 SignalingClient o1 = viewer(other)) {

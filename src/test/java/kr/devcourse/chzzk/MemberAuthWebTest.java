@@ -189,7 +189,7 @@ class MemberAuthWebTest {
         String form = strict.perform(get("/broadcasts/new")).andReturn().getResponse().getContentAsString();
         assertThat(form).contains("name=\"_csrf\"");
 
-        String live = strict.perform(get("/live/new")).andReturn().getResponse().getContentAsString();
-        assertThat(live).contains("name=\"_csrf\"", "X-XSRF-TOKEN");
+        String live = strict.perform(get("/live/new").session(sessionOf(mvc.perform(signUp(newLoginId(), "password1", "송출자")).andReturn()))).andReturn().getResponse().getContentAsString();
+        assertThat(live).contains("name=\"_csrf\"", "name=\"_csrf_header\"", "csrfHeaders(");
     }
 }

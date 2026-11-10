@@ -20,8 +20,34 @@
     </div>
     <p class="empty" id="status" th:if="${live.onAir}">방송 연결 중...</p>
     <p class="empty" id="ended-view" th:attr="hidden=${live.onAir} ? 'hidden' : null">방송이 종료되었습니다.</p>
+    <th:block th:if="${currentMember != null and live.isOwnedBy(currentMember.memberId())}">
+        <button type="button" class="button" id="owner-end-button" th:if="${live.onAir}">방송 종료</button>
+        <form method="post" th:action="@{/live/{id}/delete(id=${live.id})}" th:unless="${live.onAir}">
+            <button type="submit" class="button button-secondary">삭제</button>
+        </form>
+    </th:block>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
+<script th:if="${live.onAir and currentMember != null and live.isOwnedBy(currentMember.memberId())}">
+(function () {
+    // 소유자는 어느 기기에서든 자기 라이브를 종료할 수 있다. 화면 전환은 시청자 연결이 받는 종료 알림이 맡는다.
+    var button = document.getElementById('owner-end-button');
+    var token = document.querySelector('meta[name="_csrf"]');
+    var name = document.querySelector('meta[name="_csrf_header"]');
+    button.addEventListener('click', function () {
+        var headers = {};
+        if (token && name) { headers[name.content] = token.content; }
+        button.disabled = true;
+        fetch(location.pathname + '/end', { method: 'POST', headers: headers }).then(function (response) {
+            if (response.ok) {
+                button.hidden = true;
+            } else {
+                button.disabled = false;
+            }
+        }).catch(function () { button.disabled = false; });
+    });
+})();
+</script>
 <script th:if="${live.onAir}" th:inline="javascript">
 (function () {
     var liveId = /*[[${live.id}]]*/ 0;

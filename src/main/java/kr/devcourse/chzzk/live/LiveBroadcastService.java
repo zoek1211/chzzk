@@ -1,11 +1,5 @@
 package kr.devcourse.chzzk.live;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.context.ApplicationEventPublisher;
@@ -15,8 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class LiveBroadcastService {
 
-    private static final SecureRandom RANDOM = new SecureRandom();
-
     private final LiveBroadcastRepository broadcasts;
     private final ApplicationEventPublisher events;
 
@@ -25,13 +17,19 @@ public class LiveBroadcastService {
         this.events = events;
     }
 
-    /** 새 라이브 방송을 방송 중으로 시작한다. 송출 키 원문은 이 결과로만 얻을 수 있다. */
-    public StartedLive start(String title) {
-        String broadcastKey = newBroadcastKey();
-        LiveBroadcast saved = broadcasts.save(
-                new LiveBroadcast(LiveBroadcast.validTitle(title), hash(broadcastKey)));
+    /**
+     * 회원이 새 라이브 방송을 방송 중으로 시작한다. 시작한 회원이 소유자가 된다.
+     *
+     * @throws LiveConflictException 그 회원이 이미 방송 중인 라이브를 가지고 있음
+     */
+    public synchronized StartedLive start(String title, Long ownerId) {
+        String validTitle = LiveBroadcast.validTitle(title);
+        if (broadcasts.existsByOwnerIdAndStatus(ownerId, LiveStatus.ON_AIR)) {
+            throw new LiveConflictException("이미 방송 중인 라이브가 있습니다. 종료한 뒤 다시 시작해 주세요.");
+        }
+        LiveBroadcast saved = broadcasts.save(new LiveBroadcast(validTitle, ownerId));
         events.publishEvent(new LiveStarted(saved.getId()));
-        return new StartedLive(saved.getId(), broadcastKey);
+        return new StartedLive(saved.getId());
     }
 
     /** 방송 중이 먼저, 그다음 종료. 각 그룹은 최신순. */
@@ -40,27 +38,41 @@ public class LiveBroadcastService {
     }
 
     /**
-     * 송출 키로 라이브 방송을 종료한다. 이미 종료면 아무것도 바꾸지 않고 성공한다.
+     * 소유자가 라이브 방송을 종료한다. 이미 종료면 아무것도 바꾸지 않고 성공한다.
      *
      * @throws LiveNotFoundException 없는 라이브 방송
-     * @throws InvalidBroadcastKeyException 송출 키가 없거나 틀림(방송 상태는 그대로)
+     * @throws NotLiveOwnerException 소유자가 아님(소유자 없는 기존 라이브 포함, 방송 상태는 그대로)
      */
     @Transactional
-    public void end(Long id, String broadcastKey) {
-        LiveBroadcast broadcast = broadcasts.findById(id).orElseThrow(LiveNotFoundException::new);
-        if (!isValidKey(broadcast, broadcastKey)) {
-            throw new InvalidBroadcastKeyException();
+    public void end(Long id, Long memberId) {
+        endAndAnnounce(ownedBy(id, memberId));
+    }
+
+    /**
+     * 소유자가 종료된 라이브 방송을 삭제한다.
+     *
+     * @throws LiveNotFoundException 없는 라이브 방송
+     * @throws NotLiveOwnerException 소유자가 아님
+     * @throws LiveConflictException 아직 방송 중
+     */
+    @Transactional
+    public void delete(Long id, Long memberId) {
+        LiveBroadcast broadcast = ownedBy(id, memberId);
+        if (broadcast.isOnAir()) {
+            throw new LiveConflictException("방송 중인 라이브는 삭제할 수 없습니다. 먼저 종료해 주세요.");
         }
-        endAndAnnounce(broadcast);
+        broadcasts.delete(broadcast);
     }
 
-    /** 송출 키가 방송 중인 그 라이브 방송의 것인지. 없거나 종료된 방송이면 false. (송출 접속 검증용, 조회 한 번) */
-    @Transactional(readOnly = true)
-    public boolean canBroadcast(Long id, String broadcastKey) {
-        return broadcasts.findById(id).map(b -> b.isOnAir() && isValidKey(b, broadcastKey)).orElse(false);
+    private LiveBroadcast ownedBy(Long id, Long memberId) {
+        LiveBroadcast broadcast = broadcasts.findById(id).orElseThrow(LiveNotFoundException::new);
+        if (!broadcast.isOwnedBy(memberId)) {
+            throw new NotLiveOwnerException();
+        }
+        return broadcast;
     }
 
-    /** 방송자 연결이 끊겨 송출 키 없이 종료한다. 없거나 이미 종료면 아무 일도 없다. 내부(시그널링)용. */
+    /** 방송자 연결이 끊겨 종료한다. 없거나 이미 종료면 아무 일도 없다. 내부(시그널링)용. */
     @Transactional
     public void endByDisconnect(Long id) {
         broadcasts.findById(id).ifPresent(this::endAndAnnounce);
@@ -81,30 +93,10 @@ public class LiveBroadcastService {
         }
     }
 
-    private static boolean isValidKey(LiveBroadcast broadcast, String broadcastKey) {
-        return broadcastKey != null && !broadcastKey.isBlank() && broadcast.matchesKeyHash(hash(broadcastKey));
-    }
-
     public Optional<LiveBroadcast> find(Long id) {
         return broadcasts.findById(id);
     }
 
-    private static String newBroadcastKey() {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    static String hash(String broadcastKey) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(broadcastKey.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    public record StartedLive(Long id, String broadcastKey) {
+    public record StartedLive(Long id) {
     }
 }

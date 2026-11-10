@@ -9,7 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import java.time.Instant;
 
-/** 라이브 방송: 방송자가 지금 내보내는 방송. 송출 키는 해시로만 보관한다. */
+/** 라이브 방송: 방송자가 지금 내보내는 방송. 소유자(회원 id)는 회원 기능 이전에 만들어진 방송에서는 없다. */
 @Entity
 public class LiveBroadcast {
 
@@ -24,8 +24,8 @@ public class LiveBroadcast {
     @Column(nullable = false, length = 20)
     private LiveStatus status;
 
-    @Column(nullable = false, length = 64)
-    private String broadcastKeyHash;
+    /** 소유자 회원의 id. 회원 기능 이전에 만들어진 라이브는 null(누구도 관리할 수 없다). */
+    private Long ownerId;
 
     @Column(nullable = false)
     private Instant startedAt;
@@ -49,10 +49,10 @@ public class LiveBroadcast {
         return trimmed;
     }
 
-    LiveBroadcast(String title, String broadcastKeyHash) {
+    LiveBroadcast(String title, Long ownerId) {
         this.title = title;
         this.status = LiveStatus.ON_AIR;
-        this.broadcastKeyHash = broadcastKeyHash;
+        this.ownerId = ownerId;
         this.startedAt = Instant.now();
     }
 
@@ -66,8 +66,9 @@ public class LiveBroadcast {
         return false;
     }
 
-    boolean matchesKeyHash(String hash) {
-        return broadcastKeyHash.equals(hash);
+    /** 이 회원이 소유자인가. 소유자가 없는 라이브는 누구에게도 false. */
+    public boolean isOwnedBy(Long memberId) {
+        return ownerId != null && ownerId.equals(memberId);
     }
 
     public Long getId() {

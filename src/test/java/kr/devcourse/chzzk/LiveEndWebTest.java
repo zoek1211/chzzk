@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -39,34 +40,32 @@ class LiveEndWebTest {
         mvc = TestWeb.mvc(context);
     }
 
-    record Live(String id, String key) {
+    /** 새 회원이 라이브를 시작한다(회원당 방송 중인 라이브는 하나라서 라이브마다 새 회원). */
+    record Live(String id, MockHttpSession owner) {
     }
 
     Live start(String title) throws Exception {
-        String body = mvc.perform(post("/live").contentType(MediaType.APPLICATION_JSON)
+        MockHttpSession owner = TestLogin.member(mvc);
+        String body = mvc.perform(post("/live").session(owner).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"" + title + "\"}"))
                 .andReturn().getResponse().getContentAsString();
-        return new Live(String.valueOf((Integer) JsonPath.read(body, "$.id")), JsonPath.read(body, "$.broadcastKey"));
+        return new Live(String.valueOf((Integer) JsonPath.read(body, "$.id")), owner);
     }
 
     String page(String url) throws Exception {
         return mvc.perform(get(url)).andReturn().getResponse().getContentAsString();
     }
 
-    int end(String id, String key) throws Exception {
-        var request = post("/live/" + id + "/end");
-        if (key != null) {
-            request = request.header("X-Broadcast-Key", key);
-        }
-        return mvc.perform(request).andReturn().getResponse().getStatus();
+    int end(Live live) throws Exception {
+        return mvc.perform(post("/live/" + live.id() + "/end").session(live.owner())).andReturn().getResponse().getStatus();
     }
 
     @Test
-    void 올바른_송출_키로_종료하면_시청_화면이_종료_안내와_시작_종료_시각을_보여준다() throws Exception {
+    void 소유자가_종료하면_시청_화면이_종료_안내와_시작_종료_시각을_보여준다() throws Exception {
         Live live = start("곧 끝날 라이브");
         assertThat(LivePages.showsEnded(page("/live/" + live.id()))).isFalse();
 
-        assertThat(end(live.id(), live.key())).isEqualTo(200);
+        assertThat(end(live)).isEqualTo(200);
 
         String html = page("/live/" + live.id());
         assertThat(LivePages.showsEnded(html)).isTrue();
@@ -76,37 +75,13 @@ class LiveEndWebTest {
     }
 
     @Test
-    void 틀린_송출_키나_키_없이_종료하면_403이고_방송_상태는_그대로다() throws Exception {
-        Live live = start("지켜질 라이브");
-
-        assertThat(end(live.id(), "wrong-key")).isEqualTo(403);
-        assertThat(end(live.id(), null)).isEqualTo(403);
-
-        assertThat(LivePages.showsEnded(page("/live/" + live.id()))).isFalse();
-    }
-
-    @Test
-    void 다른_라이브_방송의_송출_키로는_종료할_수_없다() throws Exception {
-        Live a = start("라이브 A");
-        Live b = start("라이브 B");
-
-        assertThat(end(a.id(), b.key())).isEqualTo(403);
-    }
-
-    @Test
-    void 없는_라이브_방송을_종료하면_404다() throws Exception {
-        mvc.perform(post("/live/999999/end").header("X-Broadcast-Key", "any"))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
     void 이미_종료된_라이브를_다시_종료해도_성공하고_종료_시각은_바뀌지_않는다() throws Exception {
         Live live = start("두 번 끝내는 라이브");
-        assertThat(end(live.id(), live.key())).isEqualTo(200);
+        assertThat(end(live)).isEqualTo(200);
         String before = TestWeb.withoutCsrfMeta(page("/live/" + live.id()));
         Thread.sleep(1100);
 
-        assertThat(end(live.id(), live.key())).isEqualTo(200);
+        assertThat(end(live)).isEqualTo(200);
 
         assertThat(TestWeb.withoutCsrfMeta(page("/live/" + live.id()))).isEqualTo(before);
     }
@@ -117,8 +92,8 @@ class LiveEndWebTest {
         Live onAirOld = start("정렬-방송중-오래됨");
         Live endedNew = start("정렬-종료-최신");
         Live onAirNew = start("정렬-방송중-최신");
-        end(endedOld.id(), endedOld.key());
-        end(endedNew.id(), endedNew.key());
+        end(endedOld);
+        end(endedNew);
 
         String html = page("/broadcasts");
 
@@ -154,17 +129,18 @@ class LiveEndWebTest {
     }
 
     @Test
-    void 송출_화면은_송출_키를_접속_주소에_싣지_않고_첫_메시지로_보낸다() throws Exception {
-        String html = page("/live/new");
+    void 송출_화면은_송출_키를_쓰지_않고_로그인_세션으로_접속한다() throws Exception {
+        String html = mvc.perform(get("/live/new").session(TestLogin.member(mvc)))
+                .andReturn().getResponse().getContentAsString();
 
-        assertThat(html).doesNotContain("?key=");
-        assertThat(html).contains("type: 'auth'");
+        assertThat(html).doesNotContain("type: 'auth'", "X-Broadcast-Key", "broadcastKey", "?key=");
     }
 
     @Test
-    void 송출_화면의_방송_종료_버튼은_송출_키_헤더로_종료를_요청한다() throws Exception {
-        String html = page("/live/new");
-        assertThat(html).contains("방송 종료", "X-Broadcast-Key", "/end");
-        assertThat(html).contains("closeBroadcast()");
+    void 송출_화면의_방송_종료_버튼은_종료를_요청하고_연결을_닫는다() throws Exception {
+        String html = mvc.perform(get("/live/new").session(TestLogin.member(mvc)))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(html).contains("방송 종료", "/end", "closeBroadcast()");
     }
 }

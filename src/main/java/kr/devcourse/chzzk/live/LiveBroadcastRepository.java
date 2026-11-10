@@ -15,4 +15,6 @@ public interface LiveBroadcastRepository extends JpaRepository<LiveBroadcast, Lo
     List<LiveBroadcast> findAllInListOrder();
 
     List<LiveBroadcast> findAllByStatus(LiveStatus status);
+
+    boolean existsByOwnerIdAndStatus(Long ownerId, LiveStatus status);
 }

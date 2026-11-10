@@ -3,13 +3,9 @@ package kr.devcourse.chzzk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.jayway.jsonpath.JsonPath;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Duration;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,24 +28,22 @@ class LiveEndSignalingTest {
     @LocalServerPort
     int port;
 
-    final HttpClient http = HttpClient.newHttpClient();
+    TestLogin.Http owner;
 
-    record Live(String id, String key) {
+    @BeforeEach
+    void setUp() throws Exception {
+        owner = TestLogin.member(port);
+    }
+
+    record Live(String id) {
     }
 
     Live startLive() throws Exception {
-        HttpResponse<String> response = http.send(
-                TestWeb.withCsrf(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live")))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"종료 테스트\"}"))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        return new Live(String.valueOf((Object) JsonPath.read(response.body(), "$.id")),
-                JsonPath.read(response.body(), "$.broadcastKey"));
+        return new Live(owner.startedLiveId("종료 테스트"));
     }
 
     SignalingClient broadcaster(Live live) throws InterruptedException {
-        return SignalingClient.authenticatedBroadcaster(port, live.id(), live.key());
+        return SignalingClient.broadcaster(port, live.id(), owner);
     }
 
     SignalingClient viewer(Live live) {
@@ -57,9 +51,7 @@ class LiveEndSignalingTest {
     }
 
     boolean isEnded(Live live) throws Exception {
-        return LivePages.showsEnded(http.send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id())).build(),
-                HttpResponse.BodyHandlers.ofString()).body());
+        return owner.isEnded(live.id());
     }
 
     @Test
@@ -90,14 +82,12 @@ class LiveEndSignalingTest {
     }
 
     @Test
-    void 송출_키로_종료_요청을_해도_시청자에게_종료가_알려지고_연결이_닫힌다() throws Exception {
+    void 소유자가_종료_요청을_해도_시청자에게_종료가_알려지고_연결이_닫힌다() throws Exception {
         Live live = startLive();
         try (SignalingClient broadcaster = broadcaster(live); SignalingClient viewer = viewer(live)) {
             broadcaster.next("$.type");
 
-            http.send(TestWeb.withCsrf(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id() + "/end")))
-                    .header("X-Broadcast-Key", live.key())
-                    .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.discarding());
+            assertThat(owner.post("/live/" + live.id() + "/end").statusCode()).isEqualTo(200);
 
             assertThat(viewer.<String>next("$.type")).isEqualTo("ended");
             await().atMost(Duration.ofSeconds(5)).until(viewer::isClosed);
@@ -106,10 +96,25 @@ class LiveEndSignalingTest {
     }
 
     @Test
+    void 같은_계정의_다른_기기에서_종료해도_방송자_연결에_종료가_알려지고_닫힌다() throws Exception {
+        Live live = startLive();
+        try (SignalingClient broadcaster = broadcaster(live)) {
+            TestLogin.Http otherDevice = new TestLogin.Http(port, owner.sessionCookie());
+
+            assertThat(otherDevice.post("/live/" + live.id() + "/end").statusCode()).isEqualTo(200);
+
+            assertThat(broadcaster.<String>next("$.type")).isEqualTo("ended");
+            await().atMost(Duration.ofSeconds(5)).until(broadcaster::isClosed);
+        }
+    }
+
+    @Test
     void 다른_방송이_종료되어도_이_방송의_시청자는_영향을_받지_않는다() throws Exception {
         Live ended = startLive();
-        Live other = startLive();
-        try (SignalingClient otherBroadcaster = broadcaster(other); SignalingClient otherViewer = viewer(other)) {
+        TestLogin.Http otherOwner = TestLogin.member(port);
+        Live other = new Live(otherOwner.startedLiveId("다른 방송"));
+        try (SignalingClient otherBroadcaster = SignalingClient.broadcaster(port, other.id(), otherOwner);
+             SignalingClient otherViewer = viewer(other)) {
             otherBroadcaster.next("$.type");
             SignalingClient broadcaster = broadcaster(ended);
             broadcaster.close();

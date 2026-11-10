@@ -148,14 +148,11 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
         }
     }
 
-    function signal(liveId, key) {
+    function signal(liveId) {
         var scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // 송출 키는 주소(쿼리)에 싣지 않고, 접속 뒤 첫 메시지로 보낸다.
+        // 로그인 세션 쿠키가 접속에 실리고, 서버가 핸드셰이크에서 소유자인지 검사한다.
         ws = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId + '/broadcaster');
         var socket = ws;
-        socket.onopen = function () {
-            socket.send(JSON.stringify({ type: 'auth', key: key }));
-        };
 
         function send(payload) {
             socket.send(JSON.stringify(payload));
@@ -184,6 +181,8 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
                 var pc = peers[msg.viewerId];
                 if (msg.type === 'viewer-joined') {
                     addViewer(msg.viewerId);
+                } else if (msg.type === 'ended') {
+                    showEnded();
                 } else if (msg.type === 'viewer-left') {
                     removeViewer(msg.viewerId);
                 } else if (msg.type === 'answer' && pc) {
@@ -210,14 +209,16 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
             headers: csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ title: form.title.value })
         }).then(function (response) {
+            if (response.status === 401) {
+                show('로그인이 필요합니다. 로그인한 뒤 다시 시도해 주세요.');
+                return;
+            }
             return response.json().then(function (body) {
                 if (!response.ok) {
                     show(body.error || '방송을 시작하지 못했습니다.');
                     return;
                 }
-                // 송출 키는 이 화면 메모리에만 둔다. 시그널링 접속과 이후 종료에 쓰인다.
-                window.broadcastKey = body.broadcastKey;
-                signal(body.id, body.broadcastKey);
+                signal(body.id);
                 liveId = body.id;
                 endButton.hidden = false;
                 switchButton.hidden = false;
@@ -229,26 +230,31 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
         });
     });
 
+    // 종료 뒤 화면 정리. 이 화면에서 종료했을 때와, 같은 계정의 다른 기기에서 종료해 서버가 알려 올 때 쓴다.
+    function showEnded() {
+        closeBroadcast();
+        if (stream) {
+            stream.getTracks().forEach(function (track) { track.stop(); });
+        }
+        preview.srcObject = null;
+        endButton.hidden = true;
+        switchButton.hidden = true;
+        document.getElementById('started').hidden = true;
+        document.getElementById('ended').hidden = false;
+    }
+
     endButton.addEventListener('click', function () {
         endButton.disabled = true;
         fetch('/live/' + liveId + '/end', {
             method: 'POST',
-            headers: csrfHeaders({ 'X-Broadcast-Key': window.broadcastKey })
+            headers: csrfHeaders({})
         }).then(function (response) {
             if (!response.ok) {
                 endButton.disabled = false;
                 show('방송을 종료하지 못했습니다. 다시 시도해 주세요.');
                 return;
             }
-            closeBroadcast();
-            if (stream) {
-                stream.getTracks().forEach(function (track) { track.stop(); });
-            }
-            preview.srcObject = null;
-            endButton.hidden = true;
-            switchButton.hidden = true;
-            document.getElementById('started').hidden = true;
-            document.getElementById('ended').hidden = false;
+            showEnded();
         }).catch(function () {
             endButton.disabled = false;
             show('방송을 종료하지 못했습니다. 다시 시도해 주세요.');

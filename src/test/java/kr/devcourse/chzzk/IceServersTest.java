@@ -19,12 +19,12 @@ class IceServersTest {
 
     static String render(WebApplicationContext context, String path) throws Exception {
         MockMvc mvc = TestWeb.mvc(context);
-        return mvc.perform(get(path)).andReturn().getResponse().getContentAsString();
+        return mvc.perform(get(path).session(TestLogin.member(mvc))).andReturn().getResponse().getContentAsString();
     }
 
     static String liveId(WebApplicationContext context) throws Exception {
         MockMvc mvc = TestWeb.mvc(context);
-        String body = mvc.perform(LiveBroadcastWebTest.startLive("ICE 확인"))
+        String body = mvc.perform(LiveBroadcastWebTest.startLive("ICE 확인").session(TestLogin.member(mvc)))
                 .andReturn().getResponse().getContentAsString();
         return LiveBroadcastWebTest.startedId(body);
     }

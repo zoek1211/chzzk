@@ -6,15 +6,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.context.WebApplicationContext;
 
@@ -25,24 +23,22 @@ class LiveRestartPersistenceTest {
     Path dataDir;
 
     @Test
-    void 재시작한_뒤에도_라이브_방송의_제목과_시작_시각이_조회되고_송출_키_원문은_저장소에_없다() throws Exception {
+    void 재시작한_뒤에도_라이브_방송의_제목과_시작_시각이_조회되고_소유자도_유지된다() throws Exception {
         String liveId;
-        String broadcastKey;
+        MockHttpSession ownerSession;
         String watchHtmlBefore;
 
         try (ConfigurableApplicationContext first = start()) {
             MockMvc mvc = mvcOf(first);
-            String body = mvc.perform(post("/live")
+            ownerSession = TestLogin.member(mvc);
+            String body = mvc.perform(post("/live").session(ownerSession)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"title\":\"재시작 후에도 남을 라이브\"}"))
                     .andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
             liveId = String.valueOf((Integer) JsonPath.read(body, "$.id"));
-            broadcastKey = JsonPath.read(body, "$.broadcastKey");
             watchHtmlBefore = mvc.perform(get("/live/" + liveId)).andReturn().getResponse().getContentAsString();
         }
-
-        assertThat(dataFilesContain(broadcastKey)).isFalse();
 
         try (ConfigurableApplicationContext second = start()) {
             MockMvc mvc = mvcOf(second);
@@ -58,6 +54,34 @@ class LiveRestartPersistenceTest {
     }
 
     @Test
+    void 재시작한_뒤에도_같은_회원이_소유자로_인정되고_다른_회원은_거절된다() throws Exception {
+        String loginId = TestLogin.newLoginId();
+        String liveId;
+        String endedId;
+
+        try (ConfigurableApplicationContext first = start()) {
+            MockMvc mvc = mvcOf(first);
+            MockHttpSession session = (MockHttpSession) mvc.perform(post("/signup")
+                            .param("loginId", loginId).param("password", "password1").param("nickname", "소유자"))
+                    .andReturn().getRequest().getSession(false);
+            endedId = startLive(mvc, session, "옛 라이브");
+            mvc.perform(post("/live/" + endedId + "/end").session(session)).andExpect(status().isOk());
+            liveId = endedId;
+        }
+
+        try (ConfigurableApplicationContext second = start()) {
+            MockMvc mvc = mvcOf(second);
+            MockHttpSession owner = (MockHttpSession) mvc.perform(post("/login")
+                            .param("username", loginId).param("password", "password1"))
+                    .andReturn().getRequest().getSession(false);
+            MockHttpSession other = TestLogin.member(mvc);
+
+            mvc.perform(post("/live/" + liveId + "/delete").session(other)).andExpect(status().isForbidden());
+            mvc.perform(post("/live/" + liveId + "/delete").session(owner)).andExpect(status().is3xxRedirection());
+        }
+    }
+
+    @Test
     void 재시작하면_방송_중이던_라이브_방송은_종료로_보이고_이미_종료된_것의_종료_시각은_그대로다() throws Exception {
         String onAirId;
         String endedId;
@@ -65,10 +89,10 @@ class LiveRestartPersistenceTest {
 
         try (ConfigurableApplicationContext first = start()) {
             MockMvc mvc = mvcOf(first);
-            onAirId = startLive(mvc, "재시작에 끝날 라이브")[0];
-            String[] ended = startLive(mvc, "미리 끝낸 라이브");
-            endedId = ended[0];
-            mvc.perform(post("/live/" + endedId + "/end").header("X-Broadcast-Key", ended[1]))
+            onAirId = startLive(mvc, TestLogin.member(mvc), "재시작에 끝날 라이브");
+            MockHttpSession endedOwner = TestLogin.member(mvc);
+            endedId = startLive(mvc, endedOwner, "미리 끝낸 라이브");
+            mvc.perform(post("/live/" + endedId + "/end").session(endedOwner))
                     .andExpect(status().isOk());
             endedHtmlBefore = TestWeb.withoutCsrfMeta(
                     mvc.perform(get("/live/" + endedId)).andReturn().getResponse().getContentAsString());
@@ -88,41 +112,17 @@ class LiveRestartPersistenceTest {
         }
     }
 
-    private static String[] startLive(MockMvc mvc, String title) throws Exception {
-        String body = mvc.perform(post("/live")
+    private static String startLive(MockMvc mvc, MockHttpSession session, String title) throws Exception {
+        String body = mvc.perform(post("/live").session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"" + title + "\"}"))
+                .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        return new String[]{String.valueOf((Integer) JsonPath.read(body, "$.id")), JsonPath.read(body, "$.broadcastKey")};
+        return String.valueOf((Integer) JsonPath.read(body, "$.id"));
     }
 
     private static String startedAtOf(String html) {
         return html.replaceAll("(?s).*?<time[^>]*>([^<]+)</time>.*", "$1");
-    }
-
-    private boolean dataFilesContain(String text) throws Exception {
-        byte[] needle = text.getBytes(StandardCharsets.UTF_8);
-        try (Stream<Path> files = Files.walk(dataDir)) {
-            for (Path file : files.filter(Files::isRegularFile).toList()) {
-                if (indexOf(Files.readAllBytes(file), needle) >= 0) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static int indexOf(byte[] haystack, byte[] needle) {
-        outer:
-        for (int i = 0; i <= haystack.length - needle.length; i++) {
-            for (int j = 0; j < needle.length; j++) {
-                if (haystack[i + j] != needle[j]) {
-                    continue outer;
-                }
-            }
-            return i;
-        }
-        return -1;
     }
 
     private ConfigurableApplicationContext start() {

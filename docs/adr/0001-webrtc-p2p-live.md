@@ -12,7 +12,7 @@
 
 ## 결정
 
-1번을 택한다. 서버는 `/ws/live/{id}/broadcaster`, `/ws/live/{id}/viewer` WebSocket으로 시그널링 메시지만 중계하고(방송자는 접속 뒤 첫 메시지 `{type:"auth", key}`로 송출 키를 보내 인증하며, 키를 접속 주소에 싣지 않아 서버·프록시 로그에 남지 않게 한다), 영상은 방송자와 시청자 브라우저가 WebRTC로 직접 주고받는다. 서로 다른 네트워크에서 직접 연결이 안 될 때를 위해 STUN은 기본 제공하고 TURN은 환경변수로 선택 설정한다. 휴대폰 카메라 접근(`getUserMedia`)에 HTTPS가 필요하므로 cloudflared 터널 또는 직접 HTTPS를 쓴다.
+1번을 택한다. 서버는 `/ws/live/{id}/broadcaster`, `/ws/live/{id}/viewer` WebSocket으로 시그널링 메시지만 중계하고(방송자 인증은 2단계에서는 접속 뒤 첫 메시지 `{type:"auth", key}`의 송출 키였으나 3단계에서 세션 소유자 검사로 바뀌었다. [ADR 0002](0002-live-owner-session-replaces-broadcast-key.md) 참고), 영상은 방송자와 시청자 브라우저가 WebRTC로 직접 주고받는다. 서로 다른 네트워크에서 직접 연결이 안 될 때를 위해 STUN은 기본 제공하고 TURN은 환경변수로 선택 설정한다. 휴대폰 카메라 접근(`getUserMedia`)에 HTTPS가 필요하므로 cloudflared 터널 또는 직접 HTTPS를 쓴다.
 
 ## 결과
 
