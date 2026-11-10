@@ -31,7 +31,8 @@ class SecurityConfig {
                         // 녹화방송 관리: 로그인 필수(소유자 여부는 컨트롤러가 검사해 403)
                         .requestMatchers("/broadcasts/new", "/broadcasts/*/edit", "/broadcasts/*/delete").authenticated()
                         .requestMatchers(HttpMethod.POST, "/broadcasts").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/broadcasts/*/comments", "/live/*/comments").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/broadcasts/*/comments", "/live/*/comments",
+                                "/comments/*/edit", "/comments/*/delete").authenticated()
                         .anyRequest().permitAll())
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())

@@ -2,6 +2,7 @@ package kr.devcourse.chzzk.comment;
 
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 interface CommentRepository extends JpaRepository<Comment, Long> {
@@ -12,4 +13,8 @@ interface CommentRepository extends JpaRepository<Comment, Long> {
             order by c.createdAt asc, c.id asc
             """)
     List<Comment> findOldestFirst(BroadcastKind kind, Long broadcastId);
+
+    @Modifying
+    @Query("delete from Comment c where c.kind = :kind and c.broadcastId = :broadcastId")
+    void deleteByBroadcast(BroadcastKind kind, Long broadcastId);
 }

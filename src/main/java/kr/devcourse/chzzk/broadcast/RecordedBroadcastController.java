@@ -9,7 +9,9 @@ import java.io.IOException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import kr.devcourse.chzzk.video.VideoStorage;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -26,12 +28,15 @@ public class RecordedBroadcastController {
     private final RecordedBroadcastRepository broadcasts;
     private final VideoStorage videoStorage;
     private final EntityManager entityManager;
+    private final ApplicationEventPublisher events;
 
     public RecordedBroadcastController(RecordedBroadcastRepository broadcasts, VideoStorage videoStorage,
-                                       EntityManager entityManager) {
+                                       EntityManager entityManager,
+                                       ApplicationEventPublisher events) {
         this.broadcasts = broadcasts;
         this.videoStorage = videoStorage;
         this.entityManager = entityManager;
+        this.events = events;
     }
 
     @GetMapping("/broadcasts/new")
@@ -100,9 +105,11 @@ public class RecordedBroadcastController {
     }
 
     @PostMapping("/broadcasts/{id}/delete")
+    @Transactional
     public String delete(@AuthenticationPrincipal MemberPrincipal me, @PathVariable Long id) {
         RecordedBroadcast broadcast = ownedBroadcast(id, me);
         broadcasts.delete(broadcast);
+        events.publishEvent(new RecordedBroadcastDeleted(id));
         if (broadcast.getVideoSource() == VideoSource.UPLOADED) {
             videoStorage.delete(broadcast.getVideoLocation());
         }

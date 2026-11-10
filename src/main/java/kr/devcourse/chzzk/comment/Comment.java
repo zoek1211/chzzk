@@ -43,6 +43,8 @@ class Comment {
     @Column(nullable = false)
     private Instant createdAt;
 
+    private Instant updatedAt;
+
     protected Comment() {
     }
 
@@ -52,6 +54,23 @@ class Comment {
         this.author = author;
         this.body = body;
         this.createdAt = Instant.now();
+    }
+
+    BroadcastKind getKind() {
+        return kind;
+    }
+
+    Long getBroadcastId() {
+        return broadcastId;
+    }
+
+    Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    void edit(String newBody) {
+        this.body = newBody;
+        this.updatedAt = Instant.now();
     }
 
     Long getId() {

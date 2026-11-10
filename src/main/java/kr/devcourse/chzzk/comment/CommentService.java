@@ -4,8 +4,11 @@ import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.List;
 import kr.devcourse.chzzk.broadcast.RecordedBroadcastRepository;
+import kr.devcourse.chzzk.broadcast.RecordedBroadcastDeleted;
 import kr.devcourse.chzzk.live.LiveBroadcastRepository;
+import kr.devcourse.chzzk.live.LiveDeleted;
 import kr.devcourse.chzzk.member.Member;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,7 +22,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class CommentService {
 
     /** 화면에 보이는 댓글 한 건. */
-    public record CommentView(Long id, Long authorId, String authorNickname, String body, Instant createdAt) {
+    public record CommentView(Long id, Long authorId, String authorNickname, String body, Instant createdAt,
+                              boolean edited) {
     }
 
     private final CommentRepository comments;
@@ -40,7 +44,7 @@ public class CommentService {
     public List<CommentView> list(BroadcastKind kind, Long broadcastId) {
         return comments.findOldestFirst(kind, broadcastId).stream()
                 .map(c -> new CommentView(c.getId(), c.getAuthor().getId(), c.getAuthor().getNickname(),
-                        c.getBody(), c.getCreatedAt()))
+                        c.getBody(), c.getCreatedAt(), c.getUpdatedAt() != null))
                 .toList();
     }
 
@@ -68,7 +72,47 @@ public class CommentService {
         String validBody = validBody(body);
         Member author = entityManager.getReference(Member.class, memberId);
         Comment saved = comments.save(new Comment(kind, broadcastId, author, validBody));
-        return new CommentView(saved.getId(), memberId, author.getNickname(), saved.getBody(), saved.getCreatedAt());
+        return new CommentView(saved.getId(), memberId, author.getNickname(), saved.getBody(), saved.getCreatedAt(), false);
+    }
+
+    /** 수정·삭제가 끝난 댓글이 달린 방송(화면으로 돌아가는 데 쓴다). */
+    public record Target(BroadcastKind kind, Long broadcastId) {
+    }
+
+    /** 작성자만 댓글을 고칠 수 있다. 없으면 404, 작성자가 아니면 403, 본문 규칙 위반이면 {@link InvalidCommentException}. */
+    @Transactional
+    public Target edit(Long commentId, Long memberId, String body) {
+        Comment comment = authoredComment(commentId, memberId);
+        comment.edit(validBody(body));
+        return new Target(comment.getKind(), comment.getBroadcastId());
+    }
+
+    /** 작성자만 댓글을 지울 수 있다. 없으면 404, 작성자가 아니면 403. */
+    @Transactional
+    public Target delete(Long commentId, Long memberId) {
+        Comment comment = authoredComment(commentId, memberId);
+        comments.delete(comment);
+        return new Target(comment.getKind(), comment.getBroadcastId());
+    }
+
+    private Comment authoredComment(Long commentId, Long memberId) {
+        Comment comment = comments.findById(commentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (!comment.getAuthor().getId().equals(memberId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        return comment;
+    }
+
+    /** 방송이 삭제되면 그 방송의 댓글도 함께 지운다(방송 삭제와 같은 트랜잭션). */
+    @EventListener
+    void onRecordedDeleted(RecordedBroadcastDeleted event) {
+        comments.deleteByBroadcast(BroadcastKind.RECORDED, event.broadcastId());
+    }
+
+    @EventListener
+    void onLiveDeleted(LiveDeleted event) {
+        comments.deleteByBroadcast(BroadcastKind.LIVE, event.liveId());
     }
 
     private boolean broadcastExists(BroadcastKind kind, Long id) {

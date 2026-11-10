@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class CommentJsonController {
 
-    /** JSON 한 건. {@code edited}는 수정 기능이 붙을 때까지 항상 false. */
+    /** JSON 한 건. {@code edited}는 작성 뒤 수정된 적이 있는지. */
     record CommentJson(Long id, Long authorId, String authorNickname, String body, Instant createdAt,
                        boolean edited) {
     }
@@ -33,7 +33,7 @@ class CommentJsonController {
 
     private List<CommentJson> json(BroadcastKind kind, Long id) {
         return comments.listExisting(kind, id).stream()
-                .map(c -> new CommentJson(c.id(), c.authorId(), c.authorNickname(), c.body(), c.createdAt(), false))
+                .map(c -> new CommentJson(c.id(), c.authorId(), c.authorNickname(), c.body(), c.createdAt(), c.edited()))
                 .toList();
     }
 }

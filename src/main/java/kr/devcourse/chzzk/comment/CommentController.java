@@ -35,6 +35,22 @@ class CommentController {
         return "redirect:/live/" + id + "#comments";
     }
 
+    @PostMapping("/comments/{id}/edit")
+    String edit(@PathVariable Long id, @RequestParam(defaultValue = "") String body,
+                @AuthenticationPrincipal MemberPrincipal me) {
+        return backTo(comments.edit(id, me.memberId(), body));
+    }
+
+    @PostMapping("/comments/{id}/delete")
+    String delete(@PathVariable Long id, @AuthenticationPrincipal MemberPrincipal me) {
+        return backTo(comments.delete(id, me.memberId()));
+    }
+
+    private static String backTo(CommentService.Target t) {
+        String base = t.kind() == BroadcastKind.LIVE ? "/live/" : "/broadcasts/";
+        return "redirect:" + base + t.broadcastId() + "#comments";
+    }
+
     @ExceptionHandler(InvalidCommentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     String rejectComment(InvalidCommentException e, Model model) {
