@@ -186,11 +186,20 @@ class MemberAuthWebTest {
     void 기존_화면의_폼과_fetch는_CSRF_토큰을_보낸다() throws Exception {
         MockMvc strict = TestWeb.mvcWithoutCsrf(context);
 
-        String form = strict.perform(get("/broadcasts/new").session(MemberSessions.signUpAs(mvc, "폼확인")))
+        String form = strict.perform(get("/broadcasts/new").session(loggedInWithoutCsrfHelper(strict)))
                 .andReturn().getResponse().getContentAsString();
         assertThat(form).contains("name=\"_csrf\"");
 
         String live = strict.perform(get("/live/new")).andReturn().getResponse().getContentAsString();
         assertThat(live).contains("name=\"_csrf\"", "X-XSRF-TOKEN");
+    }
+
+    /** csrf() 후처리기는 공유 필터 체인의 저장소를 바꿔 버리므로, 엄격한 MockMvc로는 쿠키+필드 토큰을 직접 실어 가입한다. */
+    private static MockHttpSession loggedInWithoutCsrfHelper(MockMvc strict) throws Exception {
+        return (MockHttpSession) strict.perform(post("/signup")
+                        .cookie(new jakarta.servlet.http.Cookie("XSRF-TOKEN", "t"))
+                        .param("_csrf", "t")
+                        .param("loginId", newLoginId()).param("password", "password1").param("nickname", "폼확인"))
+                .andReturn().getRequest().getSession(false);
     }
 }
