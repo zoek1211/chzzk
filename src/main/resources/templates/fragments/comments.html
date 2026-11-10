@@ -92,7 +92,8 @@
                 box.append(details, del);
                 return box;
             }
-            var fmt = new Intl.DateTimeFormat('ko-KR', {
+            // sv-SE 로캘은 서버 렌더링과 같은 yyyy-MM-dd HH:mm 형식을 낸다
+            var fmt = new Intl.DateTimeFormat('sv-SE', {
                 timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
                 hour: '2-digit', minute: '2-digit', hour12: false
             });
