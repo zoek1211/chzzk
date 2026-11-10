@@ -69,7 +69,7 @@ class LiveBroadcastWebTest {
 
     @Test
     void 방송_목록은_라이브_방송_섹션과_녹화방송_섹션을_함께_보여주고_라이브에는_방송_중_배지가_붙는다() throws Exception {
-        String recordedUrl = mvc.perform(multipart("/broadcasts")
+        String recordedUrl = mvc.perform(multipart("/broadcasts").session(MemberSessions.signUpAs(mvc, "등록자"))
                         .param("title", "목록의 녹화방송")
                         .param("videoUrl", "https://cdn.example.com/vod/rec.mp4"))
                 .andReturn().getResponse().getRedirectedUrl();

@@ -2,6 +2,7 @@ package kr.devcourse.chzzk.member;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,6 +28,10 @@ class SecurityConfig {
         http
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/live/new").authenticated()
+                        // 녹화방송 관리: 로그인 필수(소유자 여부는 컨트롤러가 검사해 403)
+                        .requestMatchers("/broadcasts/new", "/broadcasts/*/edit", "/broadcasts/*/delete").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/broadcasts").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/broadcasts/*/comments", "/live/*/comments").authenticated()
                         .anyRequest().permitAll())
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())

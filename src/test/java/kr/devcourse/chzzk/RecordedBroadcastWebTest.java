@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.mock.web.MockMultipartFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,14 +41,18 @@ class RecordedBroadcastWebTest {
 
     MockMvc mvc;
 
+    /** 등록은 로그인 회원만 할 수 있다. */
+    MockHttpSession member;
+
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         mvc = TestWeb.mvc(context);
+        member = MemberSessions.signUpAs(mvc, "등록자");
     }
 
     @Test
     void 외부_영상_주소로_등록하면_상세_화면에서_그_영상을_재생한다() throws Exception {
-        MvcResult registered = mvc.perform(multipart("/broadcasts")
+        MvcResult registered = mvc.perform(multipart("/broadcasts").session(member)
                         .param("title", "어제 저녁 합방 다시보기")
                         .param("videoUrl", "https://cdn.example.com/vod/yesterday.mp4"))
                 .andExpect(status().is3xxRedirection())
@@ -64,7 +69,7 @@ class RecordedBroadcastWebTest {
 
     @Test
     void 목록_화면은_등록된_녹화방송을_상세_화면_링크와_함께_보여준다() throws Exception {
-        String detailUrl = mvc.perform(multipart("/broadcasts")
+        String detailUrl = mvc.perform(multipart("/broadcasts").session(member)
                         .param("title", "목록에 보일 방송")
                         .param("videoUrl", "https://cdn.example.com/vod/list.mp4"))
                 .andReturn().getResponse().getRedirectedUrl();
@@ -77,7 +82,7 @@ class RecordedBroadcastWebTest {
 
     @Test
     void 영상_출처가_없으면_등록하지_않고_폼에_오류를_보여준다() throws Exception {
-        mvc.perform(multipart("/broadcasts").param("title", "영상 없는 방송"))
+        mvc.perform(multipart("/broadcasts").session(member).param("title", "영상 없는 방송"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(containsString("영상 파일을 올리거나 영상 주소를 입력")));
 
@@ -87,7 +92,7 @@ class RecordedBroadcastWebTest {
 
     @Test
     void 영상_파일과_영상_주소를_함께_보내면_등록하지_않는다() throws Exception {
-        mvc.perform(multipart("/broadcasts")
+        mvc.perform(multipart("/broadcasts").session(member)
                         .file(new MockMultipartFile("videoFile", "a.mp4", "video/mp4", new byte[] {1}))
                         .param("title", "출처 두 개")
                         .param("videoUrl", "https://cdn.example.com/vod/b.mp4"))
@@ -97,7 +102,7 @@ class RecordedBroadcastWebTest {
 
     @Test
     void 제목이_비어_있으면_등록하지_않는다() throws Exception {
-        mvc.perform(multipart("/broadcasts")
+        mvc.perform(multipart("/broadcasts").session(member)
                         .param("title", "   ")
                         .param("videoUrl", "https://cdn.example.com/vod/untitled.mp4"))
                 .andExpect(status().isBadRequest())
@@ -106,7 +111,7 @@ class RecordedBroadcastWebTest {
 
     @Test
     void 영상_주소는_http_또는_https만_받는다() throws Exception {
-        mvc.perform(multipart("/broadcasts")
+        mvc.perform(multipart("/broadcasts").session(member)
                         .param("title", "스크립트 주소")
                         .param("videoUrl", "javascript:alert(1)"))
                 .andExpect(status().isBadRequest())
@@ -121,7 +126,7 @@ class RecordedBroadcastWebTest {
     @Test
     void 영상_파일을_업로드해_등록하면_상세_화면_플레이어_주소에서_그_파일을_받는다() throws Exception {
         byte[] videoBytes = "fake-mp4-bytes".getBytes();
-        MvcResult registered = mvc.perform(multipart("/broadcasts")
+        MvcResult registered = mvc.perform(multipart("/broadcasts").session(member)
                         .file(new MockMultipartFile("videoFile", "clip.mp4", "video/mp4", videoBytes))
                         .param("title", "업로드한 하이라이트"))
                 .andExpect(status().is3xxRedirection())

@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('댓글 오류')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header}"></header>
+<main class="container narrow">
+    <h1>댓글을 등록하지 못했습니다</h1>
+    <p class="error" role="alert" th:text="${error}">오류</p>
+    <p><a href="javascript:history.back()">← 돌아가기</a></p>
+</main>
+</body>
+</html>

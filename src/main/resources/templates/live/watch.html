@@ -26,6 +26,7 @@
             <button type="submit" class="button button-secondary">삭제</button>
         </form>
     </th:block>
+    <section th:replace="~{fragments/comments :: comments('LIVE', ${live.id})}"></section>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
 <script th:if="${live.onAir and currentMember != null and live.isOwnedBy(currentMember.memberId())}">

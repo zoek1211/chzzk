@@ -62,6 +62,7 @@ public class LiveBroadcastService {
             throw new LiveConflictException("방송 중인 라이브는 삭제할 수 없습니다. 먼저 종료해 주세요.");
         }
         broadcasts.delete(broadcast);
+        events.publishEvent(new LiveDeleted(id));
     }
 
     private LiveBroadcast ownedBy(Long id, Long memberId) {
