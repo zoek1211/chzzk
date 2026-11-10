@@ -14,9 +14,61 @@
             ~ <time th:text="${#temporals.format(live.endedAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
         </span>
     </p>
-    <p class="empty" th:if="${live.onAir}">영상 송출은 다음 단계에서 연결됩니다.</p>
+    <div class="player" th:if="${live.onAir}">
+        <video id="player" autoplay playsinline controls></video>
+    </div>
+    <p class="empty" id="status" th:if="${live.onAir}">방송 연결 중...</p>
     <p class="empty" th:unless="${live.onAir}">방송이 종료되었습니다.</p>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
+<script th:if="${live.onAir}" th:inline="javascript">
+(function () {
+    var liveId = /*[[${live.id}]]*/ 0;
+    var iceServers = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
+    var player = document.getElementById('player');
+    var status = document.getElementById('status');
+    var scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var ws = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId + '/viewer');
+    var pc = new RTCPeerConnection({ iceServers: iceServers });
+
+    function send(payload) {
+        ws.send(JSON.stringify(payload));
+    }
+
+    pc.onicecandidate = function (event) {
+        if (event.candidate) {
+            send({ type: 'candidate', candidate: event.candidate });
+        }
+    };
+    pc.ontrack = function (event) {
+        player.srcObject = event.streams[0];
+        status.hidden = true;
+        // 자동 재생이 막히면 음소거로 시작한다. 컨트롤로 음소거를 해제할 수 있다.
+        player.play().catch(function () {
+            player.muted = true;
+            player.play();
+        });
+    };
+
+    // 메시지를 순서대로 처리한다(offer 처리 전에 candidate가 앞지르지 않도록).
+    var queue = Promise.resolve();
+    ws.onmessage = function (event) {
+        var msg = JSON.parse(event.data);
+        queue = queue.then(function () {
+            if (msg.type === 'offer') {
+                return pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp }).then(function () {
+                    return pc.createAnswer();
+                }).then(function (answer) {
+                    return pc.setLocalDescription(answer);
+                }).then(function () {
+                    send({ type: 'answer', sdp: pc.localDescription.sdp });
+                });
+            } else if (msg.type === 'candidate') {
+                return pc.addIceCandidate(msg.candidate);
+            }
+        }).catch(function (e) { console.warn(e); });
+    };
+})();
+</script>
 </body>
 </html>

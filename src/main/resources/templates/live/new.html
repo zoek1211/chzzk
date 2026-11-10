@@ -24,6 +24,9 @@
         방송 중입니다. <a id="watch-link" href="#">시청 화면 열기</a>
     </p>
 </main>
+<script th:inline="javascript">
+window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
+</script>
 <script>
 (function () {
     var message = document.getElementById('message');
@@ -50,9 +53,69 @@
         });
     }
 
+    // 시청자마다 피어 연결 하나. 시청자가 들어오면 offer를 만들어 보낸다.
+    var peers = {};
+
+    function signal(liveId, key) {
+        var scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        var ws = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId
+            + '/broadcaster?key=' + encodeURIComponent(key));
+
+        function send(payload) {
+            ws.send(JSON.stringify(payload));
+        }
+
+        function addViewer(viewerId) {
+            var pc = new RTCPeerConnection({ iceServers: window.ICE_SERVERS });
+            peers[viewerId] = pc;
+            stream.getTracks().forEach(function (track) { pc.addTrack(track, stream); });
+            pc.onicecandidate = function (event) {
+                if (event.candidate) {
+                    send({ type: 'candidate', viewerId: viewerId, candidate: event.candidate });
+                }
+            };
+            pc.createOffer().then(function (offer) {
+                return pc.setLocalDescription(offer);
+            }).then(function () {
+                send({ type: 'offer', viewerId: viewerId, sdp: pc.localDescription.sdp });
+            });
+        }
+
+        function removeViewer(viewerId) {
+            if (peers[viewerId]) {
+                peers[viewerId].close();
+                delete peers[viewerId];
+            }
+        }
+
+        var queue = Promise.resolve();
+        ws.onmessage = function (event) {
+            var msg = JSON.parse(event.data);
+            queue = queue.then(function () {
+                var pc = peers[msg.viewerId];
+                if (msg.type === 'viewer-joined') {
+                    addViewer(msg.viewerId);
+                } else if (msg.type === 'viewer-left') {
+                    removeViewer(msg.viewerId);
+                } else if (msg.type === 'answer' && pc) {
+                    return pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+                } else if (msg.type === 'candidate' && pc) {
+                    return pc.addIceCandidate(msg.candidate);
+                }
+            }).catch(function (e) { console.warn(e); });
+        };
+        ws.onclose = function () {
+            Object.keys(peers).forEach(removeViewer);
+        };
+    }
+
     form.addEventListener('submit', function (event) {
         event.preventDefault();
         message.hidden = true;
+        if (!stream) {
+            show('카메라와 마이크가 준비되지 않아 방송을 시작할 수 없습니다.');
+            return;
+        }
         fetch('/live', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -63,8 +126,9 @@
                     show(body.error || '방송을 시작하지 못했습니다.');
                     return;
                 }
-                // 송출 키는 이 화면 메모리에만 둔다. 이후 단계의 송출·종료에 쓰인다.
+                // 송출 키는 이 화면 메모리에만 둔다. 시그널링 접속과 이후 종료에 쓰인다.
                 window.broadcastKey = body.broadcastKey;
+                signal(body.id, body.broadcastKey);
                 document.getElementById('watch-link').href = '/live/' + body.id;
                 document.getElementById('started').hidden = false;
                 document.getElementById('start-button').disabled = true;
