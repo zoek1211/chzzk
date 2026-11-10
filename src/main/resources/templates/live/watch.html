@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head(${live.title})}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header}"></header>
+<main class="container">
+    <h1 th:text="${live.title}">제목</h1>
+    <p class="meta">
+        <span class="badge" th:classappend="${live.onAir} ? 'badge-live' : 'badge-ended'"
+              th:text="${live.status.label}">방송 중</span>
+        ·
+        <time th:text="${#temporals.format(live.startedAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
+        <span th:if="${live.endedAt != null}">
+            ~ <time th:text="${#temporals.format(live.endedAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
+        </span>
+    </p>
+    <p class="empty" th:if="${live.onAir}">영상 송출은 다음 단계에서 연결됩니다.</p>
+    <p class="empty" th:unless="${live.onAir}">방송이 종료되었습니다.</p>
+    <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('송출 화면')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header}"></header>
+<main class="container narrow">
+    <h1>송출 화면</h1>
+
+    <p class="error" role="alert" id="message" hidden></p>
+
+    <div class="player">
+        <video id="preview" autoplay muted playsinline></video>
+    </div>
+
+    <form id="start-form" class="form">
+        <label>
+            제목
+            <input type="text" name="title" maxlength="200" required>
+        </label>
+        <button type="submit" class="button" id="start-button">방송 시작</button>
+    </form>
+
+    <p id="started" class="meta" hidden>
+        방송 중입니다. <a id="watch-link" href="#">시청 화면 열기</a>
+    </p>
+</main>
+<script>
+(function () {
+    var message = document.getElementById('message');
+    var preview = document.getElementById('preview');
+    var form = document.getElementById('start-form');
+    var stream = null;
+
+    function show(text) {
+        message.textContent = text;
+        message.hidden = false;
+    }
+
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        show('카메라와 마이크는 HTTPS(또는 localhost) 주소에서만 사용할 수 있습니다. HTTPS 주소로 다시 열어 주세요.');
+    } else {
+        navigator.mediaDevices.getUserMedia({
+            video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } },
+            audio: true
+        }).then(function (s) {
+            stream = s;
+            preview.srcObject = s;
+        }).catch(function () {
+            show('카메라와 마이크 권한이 필요합니다. 브라우저 설정에서 권한을 허용한 뒤 새로고침해 주세요.');
+        });
+    }
+
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        message.hidden = true;
+        fetch('/live', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: form.title.value })
+        }).then(function (response) {
+            return response.json().then(function (body) {
+                if (!response.ok) {
+                    show(body.error || '방송을 시작하지 못했습니다.');
+                    return;
+                }
+                // 송출 키는 이 화면 메모리에만 둔다. 이후 단계의 송출·종료에 쓰인다.
+                window.broadcastKey = body.broadcastKey;
+                document.getElementById('watch-link').href = '/live/' + body.id;
+                document.getElementById('started').hidden = false;
+                document.getElementById('start-button').disabled = true;
+                form.title.readOnly = true;
+            });
+        });
+    });
+})();
+</script>
+</body>
+</html>

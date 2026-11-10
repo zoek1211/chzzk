@@ -9,7 +9,10 @@
 <body>
 <header th:fragment="header" class="site-header">
     <a class="brand" th:href="@{/broadcasts}">치지직 <span>다시보기</span></a>
-    <a class="button" th:href="@{/broadcasts/new}">녹화방송 등록</a>
+    <nav class="header-actions">
+        <a class="button" th:href="@{/live/new}">라이브 시작</a>
+        <a class="button" th:href="@{/broadcasts/new}">녹화방송 등록</a>
+    </nav>
 </header>
 </body>
 </html>
