@@ -42,6 +42,18 @@ public class LiveBroadcast {
         this.startedAt = Instant.now();
     }
 
+    /** 방송 중에서 종료로만 바뀐다. 이미 종료면 아무 일도 없다. */
+    void end() {
+        if (status == LiveStatus.ON_AIR) {
+            status = LiveStatus.ENDED;
+            endedAt = Instant.now();
+        }
+    }
+
+    boolean matchesKeyHash(String hash) {
+        return broadcastKeyHash.equals(hash);
+    }
+
     public Long getId() {
         return id;
     }
@@ -56,12 +68,6 @@ public class LiveBroadcast {
 
     public boolean isOnAir() {
         return status == LiveStatus.ON_AIR;
-    }
-
-    boolean matchesKeyHash(String hash) {
-        return java.security.MessageDigest.isEqual(
-                broadcastKeyHash.getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                hash.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     public Instant getStartedAt() {

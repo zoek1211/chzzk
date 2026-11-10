@@ -57,7 +57,7 @@ class SignalingConfig implements WebSocketConfigurer {
             if (broadcaster) {
                 String key = UriComponentsBuilder.fromUri(request.getURI()).build()
                         .getQueryParams().getFirst("key");
-                if (!live.acceptsBroadcaster(id, key)) {
+                if (!found.get().isOnAir() || !live.verifyBroadcastKey(id, key)) {
                     return reject(response, HttpStatus.FORBIDDEN);
                 }
             } else if (!found.get().isOnAir()) {

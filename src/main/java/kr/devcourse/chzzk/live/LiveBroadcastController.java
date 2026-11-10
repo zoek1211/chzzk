@@ -9,6 +9,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -46,6 +47,20 @@ public class LiveBroadcastController {
             return ResponseEntity.ok(live.start(request.title()));
         } catch (InvalidRegistrationException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/live/{id}/end")
+    @ResponseBody
+    public ResponseEntity<Void> end(@PathVariable Long id,
+                                    @RequestHeader(value = "X-Broadcast-Key", required = false) String broadcastKey) {
+        try {
+            live.end(id, broadcastKey);
+            return ResponseEntity.ok().build();
+        } catch (LiveNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (InvalidBroadcastKeyException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
     }
 }

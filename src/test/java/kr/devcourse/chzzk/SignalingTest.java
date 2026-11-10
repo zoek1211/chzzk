@@ -69,6 +69,18 @@ class SignalingTest {
     }
 
     @Test
+    void 종료된_라이브_방송에는_올바른_송출_키로도_방송자로_접속할_수_없다() throws Exception {
+        Live live = startLive("종료된 방송");
+        HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/" + live.id() + "/end"))
+                        .header("X-Broadcast-Key", live.key())
+                        .POST(HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        assertThatThrownBy(() -> broadcaster(live, live.key())).isNotNull();
+    }
+
+    @Test
     void 없는_라이브_방송으로는_방송자도_시청자도_접속할_수_없다() {
         assertThatThrownBy(() -> broadcaster(new Live("99999", "x"), "x")).isNotNull();
         assertThatThrownBy(() -> viewer("99999")).isNotNull();
