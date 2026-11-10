@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('녹화방송 목록')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header}"></header>
+<main class="container">
+    <h1>녹화방송</h1>
+
+    <p class="empty" th:if="${#lists.isEmpty(broadcasts)}">
+        아직 등록된 녹화방송이 없습니다. <a th:href="@{/broadcasts/new}">첫 녹화방송을 등록해 보세요.</a>
+    </p>
+
+    <ul class="broadcast-grid" th:unless="${#lists.isEmpty(broadcasts)}">
+        <li th:each="broadcast : ${broadcasts}">
+            <a class="card" th:href="@{/broadcasts/{id}(id=${broadcast.id})}">
+                <div class="thumb" aria-hidden="true">▶</div>
+                <strong class="card-title" th:text="${broadcast.title}">제목</strong>
+                <span class="meta">
+                    <span th:text="${broadcast.videoSource.name() == 'UPLOADED'} ? '업로드 영상' : '외부 영상'">업로드 영상</span>
+                    ·
+                    <time th:text="${#temporals.format(broadcast.registeredAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
+                </span>
+            </a>
+        </li>
+    </ul>
+</main>
+</body>
+</html>

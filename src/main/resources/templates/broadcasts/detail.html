@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head(${broadcast.title})}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header}"></header>
+<main class="container">
+    <div class="player">
+        <video controls preload="metadata" playsinline th:src="${broadcast.playbackUrl()}"></video>
+    </div>
+    <h1 th:text="${broadcast.title}">제목</h1>
+    <p class="meta">
+        <span th:text="${broadcast.videoSource.name() == 'UPLOADED'} ? '업로드 영상' : '외부 영상'">업로드 영상</span>
+        ·
+        <time th:text="${#temporals.format(broadcast.registeredAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
+    </p>
+    <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${title} + ' · 치지직 다시보기'">치지직 다시보기</title>
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body>
+<header th:fragment="header" class="site-header">
+    <a class="brand" th:href="@{/broadcasts}">치지직 <span>다시보기</span></a>
+    <a class="button" th:href="@{/broadcasts/new}">녹화방송 등록</a>
+</header>
+</body>
+</html>
