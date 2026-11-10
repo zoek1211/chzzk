@@ -60,7 +60,7 @@ class CommentJsonWebTest {
     }
 
     String recordedBroadcast() throws Exception {
-        String url = mvc.perform(post("/broadcasts").param("title", "녹화")
+        String url = mvc.perform(post("/broadcasts").session(MemberSessions.signUpAs(mvc, "방송주인")).param("title", "녹화")
                         .param("videoUrl", "https://example.com/v.mp4"))
                 .andReturn().getResponse().getRedirectedUrl();
         return url.substring(url.lastIndexOf('/') + 1);
