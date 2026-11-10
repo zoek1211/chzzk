@@ -103,7 +103,8 @@ public class RecordedBroadcast {
         return owner != null && memberId != null && owner.getId().equals(memberId);
     }
 
-    public void ownedBy(Member owner) {
+    /** 등록할 때 소유자를 정한다. */
+    public void assignOwner(Member owner) {
         this.owner = owner;
     }
 

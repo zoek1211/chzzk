@@ -1,6 +1,6 @@
 package kr.devcourse.chzzk.list;
 
-import kr.devcourse.chzzk.broadcast.RecordedBroadcastRepository;
+import kr.devcourse.chzzk.broadcast.RecordedBroadcastService;
 import kr.devcourse.chzzk.live.LiveBroadcastService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -11,10 +11,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 public class BroadcastListController {
 
     private final LiveBroadcastService liveBroadcasts;
-    private final RecordedBroadcastRepository recordedBroadcasts;
+    private final RecordedBroadcastService recordedBroadcasts;
 
     public BroadcastListController(LiveBroadcastService liveBroadcasts,
-                                   RecordedBroadcastRepository recordedBroadcasts) {
+                                   RecordedBroadcastService recordedBroadcasts) {
         this.liveBroadcasts = liveBroadcasts;
         this.recordedBroadcasts = recordedBroadcasts;
     }
@@ -27,7 +27,7 @@ public class BroadcastListController {
     @GetMapping("/broadcasts")
     public String list(Model model) {
         model.addAttribute("liveBroadcasts", liveBroadcasts.list());
-        model.addAttribute("broadcasts", recordedBroadcasts.findAllByOrderByRegisteredAtDescIdDesc());
+        model.addAttribute("broadcasts", recordedBroadcasts.list());
         return "broadcasts/list";
     }
 }
