@@ -7,6 +7,9 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import kr.devcourse.chzzk.member.Member;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Instant;
@@ -32,6 +35,11 @@ public class RecordedBroadcast {
 
     @Column(nullable = false)
     private Instant registeredAt;
+
+    /** 소유자. 회원 기능 이전에 만들어진 방송은 없다(null). */
+    @ManyToOne
+    @JoinColumn(name = "owner_id")
+    private Member owner;
 
     protected RecordedBroadcast() {
     }
@@ -88,6 +96,23 @@ public class RecordedBroadcast {
             case EXTERNAL -> videoLocation;
             case UPLOADED -> "/videos/" + videoLocation;
         };
+    }
+
+    /** 이 회원이 소유자인가. 소유자 없는 방송은 누구에게도 false. */
+    public boolean isOwnedBy(Long memberId) {
+        return owner != null && memberId != null && owner.getId().equals(memberId);
+    }
+
+    public void ownedBy(Member owner) {
+        this.owner = owner;
+    }
+
+    public void rename(String title) {
+        this.title = validTitle(title);
+    }
+
+    public Member getOwner() {
+        return owner;
     }
 
     public Long getId() {

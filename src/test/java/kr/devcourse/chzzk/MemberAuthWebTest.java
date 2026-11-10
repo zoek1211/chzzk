@@ -186,7 +186,8 @@ class MemberAuthWebTest {
     void 기존_화면의_폼과_fetch는_CSRF_토큰을_보낸다() throws Exception {
         MockMvc strict = TestWeb.mvcWithoutCsrf(context);
 
-        String form = strict.perform(get("/broadcasts/new")).andReturn().getResponse().getContentAsString();
+        String form = strict.perform(get("/broadcasts/new").session(MemberSessions.signUpAs(mvc, "폼확인")))
+                .andReturn().getResponse().getContentAsString();
         assertThat(form).contains("name=\"_csrf\"");
 
         String live = strict.perform(get("/live/new")).andReturn().getResponse().getContentAsString();

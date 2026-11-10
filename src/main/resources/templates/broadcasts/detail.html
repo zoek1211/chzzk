@@ -11,8 +11,17 @@
     <p class="meta">
         <span th:text="${broadcast.videoSource.name() == 'UPLOADED'} ? '업로드 영상' : '외부 영상'">업로드 영상</span>
         ·
+        · 소유자 <span th:text="${broadcast.owner != null} ? ${broadcast.owner.nickname} : '알 수 없음'">닉네임</span>
+        ·
         <time th:text="${#temporals.format(broadcast.registeredAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
     </p>
+    <div class="actions" th:if="${ownedByMe}">
+        <a class="button button-secondary" th:href="@{/broadcasts/{id}/edit(id=${broadcast.id})}">수정</a>
+        <form method="post" th:action="@{/broadcasts/{id}/delete(id=${broadcast.id})}" class="inline-form"
+              onsubmit="return confirm('이 녹화방송을 삭제할까요? 되돌릴 수 없습니다.')">
+            <button type="submit" class="button button-secondary">삭제</button>
+        </form>
+    </div>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
 </body>

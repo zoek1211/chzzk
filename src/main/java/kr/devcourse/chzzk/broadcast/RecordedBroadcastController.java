@@ -1,6 +1,10 @@
 package kr.devcourse.chzzk.broadcast;
 
+import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpServletRequest;
+import kr.devcourse.chzzk.member.Member;
+import kr.devcourse.chzzk.member.MemberPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import java.io.IOException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -15,16 +19,19 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
-/** 녹화방송 등록·목록·상세 화면. 이번 단계에서는 로그인 없이 누구나 사용한다. */
+/** 녹화방송 등록·상세·수정·삭제. 등록·수정·삭제는 로그인 회원, 수정·삭제는 소유자만. */
 @Controller
 public class RecordedBroadcastController {
 
     private final RecordedBroadcastRepository broadcasts;
     private final VideoStorage videoStorage;
+    private final EntityManager entityManager;
 
-    public RecordedBroadcastController(RecordedBroadcastRepository broadcasts, VideoStorage videoStorage) {
+    public RecordedBroadcastController(RecordedBroadcastRepository broadcasts, VideoStorage videoStorage,
+                                       EntityManager entityManager) {
         this.broadcasts = broadcasts;
         this.videoStorage = videoStorage;
+        this.entityManager = entityManager;
     }
 
     @GetMapping("/broadcasts/new")
@@ -33,7 +40,8 @@ public class RecordedBroadcastController {
     }
 
     @PostMapping("/broadcasts")
-    public String register(@RequestParam String title,
+    public String register(@AuthenticationPrincipal MemberPrincipal me,
+                           @RequestParam String title,
                            @RequestParam(required = false) String videoUrl,
                            @RequestParam(required = false) MultipartFile videoFile) throws IOException {
         boolean hasFile = videoFile != null && !videoFile.isEmpty();
@@ -53,6 +61,7 @@ public class RecordedBroadcastController {
         } else {
             broadcast = RecordedBroadcast.withExternalVideo(title, videoUrl);
         }
+        broadcast.ownedBy(entityManager.getReference(Member.class, me.memberId()));
         RecordedBroadcast saved = broadcasts.save(broadcast);
         return "redirect:/broadcasts/" + saved.getId();
     }
@@ -63,14 +72,59 @@ public class RecordedBroadcastController {
         model.addAttribute("error", e.getMessage());
         model.addAttribute("title", request.getParameter("title"));
         model.addAttribute("videoUrl", request.getParameter("videoUrl"));
+        if (request.getRequestURI().endsWith("/edit")) {
+            model.addAttribute("broadcast", broadcasts.findById(pathId(request)).orElse(null));
+            return "broadcasts/edit";
+        }
         return "broadcasts/new";
     }
 
+    private static Long pathId(HttpServletRequest request) {
+        String[] parts = request.getRequestURI().split("/");
+        return Long.valueOf(parts[parts.length - 2]);
+    }
+
+    @GetMapping("/broadcasts/{id}/edit")
+    public String editForm(@AuthenticationPrincipal MemberPrincipal me, @PathVariable Long id, Model model) {
+        model.addAttribute("broadcast", ownedBroadcast(id, me));
+        return "broadcasts/edit";
+    }
+
+    @PostMapping("/broadcasts/{id}/edit")
+    public String edit(@AuthenticationPrincipal MemberPrincipal me, @PathVariable Long id,
+                       @RequestParam String title) {
+        RecordedBroadcast broadcast = ownedBroadcast(id, me);
+        broadcast.rename(title);
+        broadcasts.save(broadcast);
+        return "redirect:/broadcasts/" + id;
+    }
+
+    @PostMapping("/broadcasts/{id}/delete")
+    public String delete(@AuthenticationPrincipal MemberPrincipal me, @PathVariable Long id) {
+        RecordedBroadcast broadcast = ownedBroadcast(id, me);
+        broadcasts.delete(broadcast);
+        if (broadcast.getVideoSource() == VideoSource.UPLOADED) {
+            videoStorage.delete(broadcast.getVideoLocation());
+        }
+        return "redirect:/broadcasts";
+    }
+
+    /** 없으면 404, 소유자가 아니면(소유자 없는 방송 포함) 403. */
+    private RecordedBroadcast ownedBroadcast(Long id, MemberPrincipal me) {
+        RecordedBroadcast broadcast = broadcasts.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (me == null || !broadcast.isOwnedBy(me.memberId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        return broadcast;
+    }
+
     @GetMapping("/broadcasts/{id}")
-    public String detail(@PathVariable Long id, Model model) {
+    public String detail(@AuthenticationPrincipal MemberPrincipal me, @PathVariable Long id, Model model) {
         RecordedBroadcast broadcast = broadcasts.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         model.addAttribute("broadcast", broadcast);
+        model.addAttribute("ownedByMe", me != null && broadcast.isOwnedBy(me.memberId()));
         return "broadcasts/detail";
     }
 }

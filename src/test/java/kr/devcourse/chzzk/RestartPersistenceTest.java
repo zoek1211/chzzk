@@ -29,7 +29,7 @@ class RestartPersistenceTest {
 
         try (ConfigurableApplicationContext first = start()) {
             MockMvc mvc = mvcOf(first);
-            detailUrl = mvc.perform(multipart("/broadcasts")
+            detailUrl = mvc.perform(multipart("/broadcasts").session(MemberSessions.signUpAs(mvc, "등록자"))
                             .file(new MockMultipartFile("videoFile", "replay.mp4", "video/mp4", videoBytes))
                             .param("title", "재시작 후에도 남을 방송"))
                     .andExpect(status().is3xxRedirection())

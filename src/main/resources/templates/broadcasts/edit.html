@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('녹화방송 수정')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header}"></header>
+<main class="container narrow">
+    <h1>녹화방송 수정</h1>
+
+    <p class="error" role="alert" th:if="${error}" th:text="${error}">오류</p>
+
+    <form method="post" th:action="@{/broadcasts/{id}/edit(id=${broadcast.id})}" class="form">
+        <label>
+            제목
+            <input type="text" name="title" maxlength="200" required th:value="${title != null} ? ${title} : ${broadcast.title}">
+        </label>
+        <button type="submit" class="button">저장</button>
+    </form>
+    <p><a th:href="@{/broadcasts/{id}(id=${broadcast.id})}">← 취소</a></p>
+</main>
+</body>
+</html>

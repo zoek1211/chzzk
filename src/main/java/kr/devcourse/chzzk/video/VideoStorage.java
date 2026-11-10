@@ -48,6 +48,19 @@ public class VideoStorage {
         return Optional.of(new FileSystemResource(file));
     }
 
+    /** 보관된 영상을 지운다. 이미 없으면 아무 일도 하지 않는다. */
+    public void delete(String storedName) {
+        Path file = directory.resolve(storedName).normalize();
+        if (!file.getParent().equals(directory)) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("영상을 삭제하지 못했습니다", e);
+        }
+    }
+
     private static String extensionOf(String fileName) {
         if (fileName == null) {
             return "";
