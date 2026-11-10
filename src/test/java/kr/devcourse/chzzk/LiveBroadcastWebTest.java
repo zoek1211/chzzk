@@ -103,6 +103,25 @@ class LiveBroadcastWebTest {
     }
 
     @Test
+    void 송출_화면은_카메라_전환_버튼과_화질_제한과_HTTPS_안내를_갖는다() throws Exception {
+        mvc.perform(get("/live/new"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("id=\"switch-camera-button\"")))
+                .andExpect(content().string(containsString("facingMode")))
+                .andExpect(content().string(containsString("frameRate: { max: 30 }")))
+                .andExpect(content().string(containsString("HTTPS")));
+    }
+
+    @Test
+    void 시청_화면은_음소거_해제_버튼을_갖는다() throws Exception {
+        String liveId = startedId(mvc.perform(startLive("음소거 라이브")).andReturn().getResponse().getContentAsString());
+
+        mvc.perform(get("/live/" + liveId))
+                .andExpect(content().string(containsString("id=\"unmute-button\"")))
+                .andExpect(content().string(containsString("음소거 해제")));
+    }
+
+    @Test
     void 송출_키는_방송_목록과_시청_화면에_나타나지_않는다() throws Exception {
         String body = mvc.perform(startLive("키 비공개 라이브")).andReturn().getResponse().getContentAsString();
         String key = JsonPath.read(body, "$.broadcastKey");

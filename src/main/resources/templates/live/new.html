@@ -12,6 +12,8 @@
         <video id="preview" autoplay muted playsinline></video>
     </div>
 
+    <button type="button" class="button button-secondary" id="switch-camera-button" hidden>카메라 전환</button>
+
     <form id="start-form" class="form">
         <label>
             제목
@@ -43,19 +45,77 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
         message.hidden = false;
     }
 
+    var facing = 'user';
+    var startButton = document.getElementById('start-button');
+    var switchButton = document.getElementById('switch-camera-button');
+
+    // 화질 제한: 최대 1280x720, 30fps.
+    function videoConstraints(mode) {
+        return { facingMode: mode, width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } };
+    }
+
+    function blockStart(text) {
+        show(text);
+        startButton.disabled = true;
+    }
+
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        show('카메라와 마이크는 HTTPS(또는 localhost) 주소에서만 사용할 수 있습니다. HTTPS 주소로 다시 열어 주세요.');
+        blockStart('카메라와 마이크는 HTTPS(또는 localhost) 주소에서만 사용할 수 있습니다. HTTPS 주소로 다시 열어 주세요.');
     } else {
-        navigator.mediaDevices.getUserMedia({
-            video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } },
-            audio: true
-        }).then(function (s) {
+        navigator.mediaDevices.getUserMedia({ video: videoConstraints(facing), audio: true }).then(function (s) {
             stream = s;
             preview.srcObject = s;
-        }).catch(function () {
-            show('카메라와 마이크 권한이 필요합니다. 브라우저 설정에서 권한을 허용한 뒤 새로고침해 주세요.');
+        }).catch(function (e) {
+            if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+                blockStart('카메라와 마이크 권한이 거부되었습니다. 주소창 옆 자물쇠(사이트 설정)에서 카메라와 마이크를 허용한 뒤 새로고침해 주세요.');
+            } else if (e && e.name === 'NotFoundError') {
+                blockStart('카메라 또는 마이크를 찾을 수 없습니다. 기기 연결을 확인한 뒤 새로고침해 주세요.');
+            } else {
+                blockStart('카메라를 시작하지 못했습니다. 다른 앱이 카메라를 쓰고 있지 않은지 확인한 뒤 새로고침해 주세요.');
+            }
         });
     }
+
+    // 전면/후면 전환. 새 영상 트랙을 얻어 모든 시청자 연결의 영상 sender에 갈아 끼우고 옛 트랙은 멈춘다.
+    function swapVideoTrack(newTrack) {
+        var oldTrack = stream.getVideoTracks()[0];
+        if (oldTrack) {
+            stream.removeTrack(oldTrack);
+            oldTrack.stop();
+        }
+        stream.addTrack(newTrack);
+        preview.srcObject = stream;
+        return Promise.all(Object.keys(peers).map(function (id) {
+            var sender = peers[id].getSenders().filter(function (s) {
+                return s.track && s.track.kind === 'video';
+            })[0];
+            return sender ? sender.replaceTrack(newTrack) : null;
+        }));
+    }
+
+    function requestCamera(mode) {
+        return navigator.mediaDevices.getUserMedia({ video: videoConstraints(mode) })
+            .then(function (s) { return s.getVideoTracks()[0]; });
+    }
+
+    switchButton.addEventListener('click', function () {
+        if (!stream) { return; }
+        var next = facing === 'user' ? 'environment' : 'user';
+        switchButton.disabled = true;
+        // 일부 폰은 카메라를 동시에 둘 열 수 없으므로 옛 트랙을 먼저 멈춘 뒤 새 카메라를 요청한다.
+        stream.getVideoTracks().forEach(function (t) { t.stop(); });
+        requestCamera(next).then(function (track) {
+            facing = next;
+            return swapVideoTrack(track);
+        }).catch(function () {
+            show('카메라를 전환하지 못했습니다. 이전 카메라로 되돌립니다.');
+            return requestCamera(facing).then(swapVideoTrack).catch(function () {
+                show('카메라를 다시 켜지 못했습니다. 새로고침 후 방송을 다시 시작해 주세요.');
+            });
+        }).then(function () {
+            switchButton.disabled = false;
+        });
+    });
 
     // 시청자마다 피어 연결 하나. 시청자가 들어오면 offer를 만들어 보낸다.
     var peers = {};
@@ -135,6 +195,7 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
                 signal(body.id, body.broadcastKey);
                 liveId = body.id;
                 endButton.hidden = false;
+                switchButton.hidden = false;
                 document.getElementById('watch-link').href = '/live/' + body.id;
                 document.getElementById('started').hidden = false;
                 document.getElementById('start-button').disabled = true;
@@ -159,6 +220,7 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
             }
             preview.srcObject = null;
             endButton.hidden = true;
+            switchButton.hidden = true;
             document.getElementById('started').hidden = true;
             document.getElementById('ended').hidden = false;
         }).catch(function () {
