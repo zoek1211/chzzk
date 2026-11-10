@@ -143,3 +143,6 @@ img, video { max-width: 100%; }
     .header-actions { flex-wrap: wrap; }
     .container { padding: 16px 12px; }
 }
+
+/* hidden 속성이 .button 등의 display 지정보다 항상 우선하도록 */
+[hidden] { display: none !important; }
