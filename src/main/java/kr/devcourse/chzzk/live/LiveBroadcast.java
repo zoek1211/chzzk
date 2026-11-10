@@ -42,12 +42,14 @@ public class LiveBroadcast {
         this.startedAt = Instant.now();
     }
 
-    /** 방송 중에서 종료로만 바뀐다. 이미 종료면 아무 일도 없다. */
-    void end() {
+    /** 방송 중에서 종료로만 바뀐다. 이미 종료면 아무 일도 없다. 실제로 바뀌었으면 true. */
+    boolean end() {
         if (status == LiveStatus.ON_AIR) {
             status = LiveStatus.ENDED;
             endedAt = Instant.now();
+            return true;
         }
+        return false;
     }
 
     boolean matchesKeyHash(String hash) {
