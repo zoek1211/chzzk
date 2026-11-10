@@ -63,7 +63,7 @@ class CommentWebTest {
     }
 
     String liveBroadcast(String title) throws Exception {
-        String json = mvc.perform(post("/live").contentType(MediaType.APPLICATION_JSON)
+        String json = mvc.perform(post("/live").session(TestLogin.member(mvc)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"" + title + "\"}"))
                 .andReturn().getResponse().getContentAsString();
         return json.replaceAll(".*\"id\":(\\d+).*", "$1");
