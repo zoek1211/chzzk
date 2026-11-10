@@ -60,12 +60,24 @@
         if (!player.muted) { unmuteButton.hidden = true; }
     });
 
+    // 방송이 끝나면 영상을 멈추고, 서버가 그리는 종료 안내 화면으로 새로 불러온다.
+    function showEnded() {
+        player.pause();
+        player.srcObject = null;
+        pc.close();
+        location.reload();
+    }
+
     // 메시지를 순서대로 처리한다(offer 처리 전에 candidate가 앞지르지 않도록).
     var queue = Promise.resolve();
     ws.onmessage = function (event) {
         var msg = JSON.parse(event.data);
         if (msg.type === 'full') {
             status.textContent = '시청자가 가득 찼습니다';
+            return;
+        }
+        if (msg.type === 'ended') {
+            showEnded();
             return;
         }
         queue = queue.then(function () {

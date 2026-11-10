@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -40,11 +41,34 @@ class SignalingHandler extends TextWebSocketHandler {
     private final ObjectMapper json;
     private final Map<Long, Room> rooms = new ConcurrentHashMap<>();
 
+    private final LiveBroadcastService live;
     private final int viewerCapacity;
 
-    SignalingHandler(ObjectMapper json, @Value("${chzzk.live.viewer-capacity:5}") int viewerCapacity) {
+    SignalingHandler(
+            ObjectMapper json,
+            LiveBroadcastService live,
+            @Value("${chzzk.live.viewer-capacity:5}") int viewerCapacity) {
         this.json = json;
+        this.live = live;
         this.viewerCapacity = viewerCapacity;
+    }
+
+    /** 라이브 방송이 종료되면(종료 요청·연결 끊김 공통) 시청자 모두에게 알리고 연결을 닫는다. */
+    @TransactionalEventListener(fallbackExecution = true)
+    void onLiveEnded(LiveEnded ended) {
+        Room room = rooms.remove(ended.liveId());
+        if (room == null) {
+            return;
+        }
+        String message = json.createObjectNode().put("type", "ended").toString();
+        room.viewers.values().forEach(viewer -> {
+            send(viewer, message);
+            try {
+                viewer.close(CloseStatus.NORMAL.withReason("방송 종료"));
+            } catch (IOException | RuntimeException e) {
+                log.debug("시청자 연결을 닫지 못했습니다", e);
+            }
+        });
     }
 
     /** 라이브 방송 하나의 방. 이후 단계(정원, 종료)에서 확장한다. */
@@ -128,6 +152,7 @@ class SignalingHandler extends TextWebSocketHandler {
             synchronized (room) {
                 if (room.broadcaster != null && room.broadcaster.getId().equals(raw.getId())) {
                     room.broadcaster = null;
+                    live.endByDisconnect(liveId(raw));
                 }
             }
         } else if (room.viewers.remove(raw.getId()) != null) {

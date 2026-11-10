@@ -10,6 +10,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import kr.devcourse.chzzk.broadcast.RecordedBroadcast;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,9 +20,11 @@ public class LiveBroadcastService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final LiveBroadcastRepository broadcasts;
+    private final ApplicationEventPublisher events;
 
-    public LiveBroadcastService(LiveBroadcastRepository broadcasts) {
+    public LiveBroadcastService(LiveBroadcastRepository broadcasts, ApplicationEventPublisher events) {
         this.broadcasts = broadcasts;
+        this.events = events;
     }
 
     /** 새 라이브 방송을 방송 중으로 시작한다. 송출 키 원문은 이 결과로만 얻을 수 있다. */
@@ -52,7 +55,7 @@ public class LiveBroadcastService {
         if (!isValidKey(broadcast, broadcastKey)) {
             throw new InvalidBroadcastKeyException();
         }
-        broadcast.end();
+        endAndAnnounce(broadcast);
     }
 
     /** 송출 키가 그 라이브 방송의 것인지. 없는 방송이면 false. (송출 접속 검증용) */
@@ -64,7 +67,7 @@ public class LiveBroadcastService {
     /** 방송자 연결이 끊겨 송출 키 없이 종료한다. 없거나 이미 종료면 아무 일도 없다. 내부(시그널링)용. */
     @Transactional
     public void endByDisconnect(Long id) {
-        broadcasts.findById(id).ifPresent(LiveBroadcast::end);
+        broadcasts.findById(id).ifPresent(this::endAndAnnounce);
     }
 
     /** 서비스가 다시 시작될 때 남아 있는 방송 중 라이브 방송을 모두 종료로 바꾼다. */
@@ -73,6 +76,13 @@ public class LiveBroadcastService {
         List<LiveBroadcast> onAir = broadcasts.findAllByStatus(LiveStatus.ON_AIR);
         onAir.forEach(LiveBroadcast::end);
         return onAir.size();
+    }
+
+    /** 방송 중이었다면 종료로 바꾸고, 시청자에게 알릴 수 있도록 종료 이벤트를 낸다. */
+    private void endAndAnnounce(LiveBroadcast broadcast) {
+        if (broadcast.end()) {
+            events.publishEvent(new LiveEnded(broadcast.getId()));
+        }
     }
 
     private static boolean isValidKey(LiveBroadcast broadcast, String broadcastKey) {
