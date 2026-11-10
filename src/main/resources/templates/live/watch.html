@@ -20,6 +20,7 @@
     </div>
     <p class="empty" id="status" th:if="${live.onAir}">방송 연결 중...</p>
     <p class="empty" id="ended-view" th:attr="hidden=${live.onAir} ? 'hidden' : null">방송이 종료되었습니다.</p>
+    <section th:replace="~{fragments/comments :: comments('LIVE', ${live.id})}"></section>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
 <script th:if="${live.onAir}" th:inline="javascript">
