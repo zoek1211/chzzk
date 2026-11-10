@@ -44,6 +44,15 @@ public class CommentService {
                 .toList();
     }
 
+    /** {@link #list(BroadcastKind, Long)}와 같지만 없는 방송이면 404. */
+    @Transactional(readOnly = true)
+    public List<CommentView> listExisting(BroadcastKind kind, Long broadcastId) {
+        if (!broadcastExists(kind, broadcastId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        return list(kind, broadcastId);
+    }
+
     /** 템플릿에서 문자열 종류로 부르기 위한 편의 메서드. */
     @Transactional(readOnly = true)
     public List<CommentView> list(String kind, Long broadcastId) {
