@@ -41,3 +41,7 @@ data/
 
 ### Local tooling ###
 .claude/
+
+### 로컬 HTTPS 키스토어 (커밋 금지) ###
+*.p12
+*.jks
