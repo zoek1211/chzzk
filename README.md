@@ -1,17 +1,19 @@
-# 치지직 만들기 ① 녹화방송 · ② 휴대폰 라이브 방송 · ③ 인증·인가와 댓글
+# 치지직 만들기 ① 녹화방송 · ② 휴대폰 라이브 방송 · ③ 인증·인가와 댓글 · ④ 도네이션
 
 | 단계 | 과제 | 태그 |
 | --- | --- | --- |
 | 1단계 | 치지직 만들기 ① 인증·인가 없는 녹화방송 | `step-1` |
 | 2단계 | 치지직 만들기 ② 인증·인가 없는 휴대폰 라이브 송출 (1단계 기능 유지) | `step-2` |
 | 3단계 | 치지직 만들기 ③ 인증·인가와 댓글 (1·2단계 기능 유지) | `step-3` |
+| 4단계 | 치지직 만들기 ④ 도네이션: 토스페이먼츠 테스트 결제 (1~3단계 기능 유지) | `step-4` |
 
-**녹화방송(다시보기)** 을 등록·시청하고(1단계), 휴대폰 카메라·마이크로 **라이브 방송** 을 송출해 다른 화면에서 실시간으로 시청하며(2단계), **회원가입·로그인** 한 회원이 자기 방송만 관리하고 방송마다 **댓글** 로 소통하는(3단계) 서비스입니다. 방송 목록·시청·댓글 읽기는 로그인 없이 공개입니다([공개 범위](#공개-범위)).
+**녹화방송(다시보기)** 을 등록·시청하고(1단계), 휴대폰 카메라·마이크로 **라이브 방송** 을 송출해 다른 화면에서 실시간으로 시청하며(2단계), **회원가입·로그인** 한 회원이 자기 방송만 관리하고 방송마다 **댓글** 로 소통하고(3단계), 방송 소유자에게 토스페이먼츠 **테스트 결제** 로 **후원** 하는(4단계) 서비스입니다. 방송 목록·시청·댓글 읽기는 로그인 없이 공개입니다([공개 범위](#공개-범위)).
 
 - Java 25 이상, Spring Boot 4.1, Spring MVC + Thymeleaf, Spring Data JPA, Spring WebSocket, Spring Security(세션 폼 로그인·CSRF)
-- 저장소: 파일 기반 H2 DB(회원·녹화방송·라이브 방송·댓글) + 로컬 디스크(업로드 영상)
+- 저장소: 파일 기반 H2 DB(회원·녹화방송·라이브 방송·댓글·후원 주문) + 로컬 디스크(업로드 영상)
 - 라이브 영상 전달: WebRTC P2P (서버는 WebSocket 시그널링만 중계) — 선택 이유는 [ADR 0001](docs/adr/0001-webrtc-p2p-live.md)
 - 라이브 권한: 송출 키 대신 로그인 세션의 소유자 검사 — 선택 이유는 [ADR 0002](docs/adr/0002-live-owner-session-replaces-broadcast-key.md)
+- 후원: 토스페이먼츠 결제창(테스트 키) + 서버의 승인·확인 — 선택 이유는 [ADR 0003](docs/adr/0003-toss-test-payment-with-server-confirmation.md)
 
 용어는 [GLOSSARY.md](GLOSSARY.md)에 정리했습니다.
 
@@ -23,7 +25,7 @@
 ./gradlew bootRun
 ```
 
-브라우저에서 <http://localhost:8080> 을 엽니다. `/broadcasts` 방송 목록 화면으로 이동합니다. 녹화방송 등록·라이브 시작·댓글 작성은 로그인이 필요하므로 먼저 헤더의 **회원가입** 으로 가입합니다(가입하면 바로 로그인됩니다).
+브라우저에서 <http://localhost:8080> 을 엽니다. `/broadcasts` 방송 목록 화면으로 이동합니다. 녹화방송 등록·라이브 시작·댓글 작성은 로그인이 필요하므로 먼저 헤더의 **회원가입** 으로 가입합니다(가입하면 바로 로그인됩니다). 후원은 토스 테스트 키가 있어야 켜집니다([토스페이먼츠 테스트 키 준비](#토스페이먼츠-테스트-키-준비)). 키가 없어도 앱은 그대로 뜨고 후원만 꺼집니다.
 
 jar로 실행하려면:
 
@@ -42,7 +44,7 @@ java -jar build/libs/chzzk-0.0.1-SNAPSHOT.jar
 
 ## 환경변수
 
-모두 선택 사항입니다. 예시는 [.env.example](.env.example)에 있습니다. 비밀 값(TURN 자격 증명, 키스토어 비밀번호)은 저장소에 커밋하지 말고 실행 환경에서만 설정하세요.
+모두 선택 사항입니다. 예시는 [.env.example](.env.example)에 있습니다. 비밀 값(TURN 자격 증명, 키스토어 비밀번호, 토스 시크릿 키)은 저장소에 커밋하지 말고 실행 환경에서만 설정하세요.
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
@@ -59,6 +61,8 @@ java -jar build/libs/chzzk-0.0.1-SNAPSHOT.jar
 | `CHZZK_SSL_KEY_STORE` | (없음) | 키스토어 파일 경로 (예: `file:./chzzk-keystore.p12`) |
 | `CHZZK_SSL_KEY_STORE_PASSWORD` | (없음) | 키스토어 비밀번호 (비밀 값) |
 | `CHZZK_SSL_KEY_STORE_TYPE` | `PKCS12` | 키스토어 종류 |
+| `TOSS_CLIENT_KEY` | (없음) | 토스페이먼츠 클라이언트 키(`test_ck_...`, 결제창을 여는 공개 값). 시크릿 키와 **둘 다** 있어야 후원이 켜짐 |
+| `TOSS_SECRET_KEY` | (없음) | 토스페이먼츠 시크릿 키(`test_sk_...`, 비밀 값. 서버만 사용하고 화면·로그에 내지 않음) |
 
 예시:
 
@@ -76,11 +80,23 @@ CHZZK_TURN_USERNAME=<사용자> CHZZK_TURN_CREDENTIAL=<자격증명> ./gradlew b
 # 직접 HTTPS
 CHZZK_SSL_ENABLED=true CHZZK_SSL_KEY_STORE=file:./chzzk-keystore.p12 \
 CHZZK_SSL_KEY_STORE_PASSWORD=<비밀번호> ./gradlew bootRun
+
+# 후원(토스 테스트 결제) 켜기 (값은 본인 테스트 키로)
+TOSS_CLIENT_KEY=test_ck_<클라이언트키> TOSS_SECRET_KEY=test_sk_<시크릿키> ./gradlew bootRun
 ```
+
+### 토스페이먼츠 테스트 키 준비
+
+실제 돈이 오가지 않는 **테스트 결제** 만 씁니다.
+
+1. [토스페이먼츠 개발자센터](https://developers.tosspayments.com)에 가입·로그인하고 내 개발 정보(API 키)에서 **API 개별 연동 키** 의 테스트 키를 확인합니다. 클라이언트 키는 `test_ck_` 로, 시크릿 키는 `test_sk_` 로 시작합니다.
+2. 두 값을 위 환경변수 `TOSS_CLIENT_KEY`, `TOSS_SECRET_KEY` 로 설정해 서버를 띄웁니다. 시크릿 키는 저장소에 커밋하지 마세요.
+3. 키가 하나라도 없으면 **후원이 꺼진 채** 앱이 뜹니다. 방송 화면의 후원 영역에는 안내 문구와 합계·내역만 보이고, `POST /donations` 는 `503` 입니다. 다른 기능에는 영향이 없습니다.
+4. 웹훅(선택)은 결제사가 이 서버로 직접 호출해야 하므로 공개 주소가 필요합니다. `cloudflared tunnel --url http://localhost:8080` 으로 임시 주소를 만들고([휴대폰 연결 방법](#휴대폰-연결-방법)과 같은 방법), 개발자센터의 웹훅 설정에 `https://<임의이름>.trycloudflare.com/donations/webhook` 을 등록해 결제 상태 변경 이벤트를 받습니다. 등록하지 않아도 성공 리다이렉트만으로 후원은 확정됩니다.
 
 ## 이번 단계 구현 범위
 
-3단계(인증·인가와 댓글)를 추가했고, **1·2단계 기능은 모두 유지**됩니다. 단, 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하고 라이브의 송출 키는 로그인한 소유자 검사로 바뀌었습니다(아래 3단계 표 참고).
+4단계(도네이션)를 추가했고, **1~3단계 기능은 모두 유지**됩니다. 4단계 내용은 아래 [4단계: 도네이션](#4단계-도네이션) 소단원입니다. 아래 표와 3단계 소단원은 3단계 기준입니다. 단, 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하고 라이브의 송출 키는 로그인한 소유자 검사로 바뀌었습니다(아래 3단계 표 참고).
 
 ### 1단계: 녹화방송
 
@@ -126,6 +142,8 @@ CHZZK_SSL_KEY_STORE_PASSWORD=<비밀번호> ./gradlew bootRun
 - 송출 화면을 닫거나 새로고침해 연결이 끊기면 그 방송은 종료되고 다시 시작할 수 없습니다.
 
 ### 3단계: 인증·인가와 댓글
+
+> 4단계에서 바뀐 점: 아래 "이번 단계에서 하지 않는 것"의 도네이션은 4단계에서 추가했습니다. [4단계: 도네이션](#4단계-도네이션)을 보세요.
 
 HTTP 경로와 상태 코드는 아래와 같습니다. 상태 변경 요청은 모두 `POST` 이고 CSRF 토큰이 필요합니다(없으면 403). 로그인이 필요한 화면·처리에 **비로그인으로 접근하면 `302` 로 `/login` 으로 보내거나(변경은 일어나지 않음) `401` 을 돌려줍니다**(둘로 나뉘는 이유는 아래). 다른 회원이 요청하면 `403`, 없는 대상은 `404` 입니다. 화면의 버튼 숨김은 편의일 뿐이고, 권한은 서버가 매 요청에서 검사합니다.
 
@@ -188,9 +206,58 @@ HTTP 경로와 상태 코드는 아래와 같습니다. 상태 변경 요청은 
 
 이번 단계에서 하지 않는 것: 이메일 인증·비밀번호 찾기·회원 탈퇴, 소셜 로그인·JWT·관리자 역할, 방송 소유자의 남의 댓글 삭제, 댓글 답글·좋아요, 실시간 채팅(라이브 댓글은 5초 주기 조회), 도네이션, 방송 중인 라이브의 제목 수정.
 
+### 4단계: 도네이션
+
+후원은 **후원 주문 → 결제창 → 서버 승인·확인 → 확정** 순서로 이뤄집니다. 화면에 "성공"이 보여도 서버가 토스에 승인을 확인하기 전에는 확정되지 않습니다. 용어는 [GLOSSARY.md](GLOSSARY.md)(후원, 후원 주문, 승인 통지, 수신자)를 따르고, 선택 이유는 [ADR 0003](docs/adr/0003-toss-test-payment-with-server-confirmation.md)입니다. 방송 종류 값은 녹화방송 `RECORDED`, 라이브 `LIVE` 입니다.
+
+| 범위 | 경로 | 누가 | 응답 |
+| --- | --- | --- | --- |
+| **후원 대상·금액 선택**: 녹화방송 상세·라이브 시청 화면의 후원 영역에서 금액 버튼(1,000·5,000·10,000원)이나 입력(1,000원 단위, 1,000~1,000,000원)과 메시지(선택, 100자 이하)를 고름 | `GET /broadcasts/{id}`, `GET /live/{id}` 하단 | 로그인한 회원(자기 방송 제외). 비로그인은 로그인 링크, 키 없음은 안내만 | `200` |
+| **테스트 결제 요청**: 서버가 후원 주문(`대기`)을 만들고 수신자(방송 소유자)·금액을 고정한 뒤, 브라우저가 그 주문 번호·금액으로 토스 결제창을 엶 | `POST /donations` (JSON `{"kind", "broadcastId", "amount", "message"}`, CSRF 토큰 필요) | 로그인한 회원 | 성공 `201 {"orderId", "amount", "orderName", "clientKey", "successUrl", "failUrl"}`. 비로그인 `401`, 없는 방송 `404`, 금액·메시지·자기 방송·소유자 없는 방송·방송 미선택 `400 {"message"}`, CSRF 없음 `403`, 키 없음 `503 {"message"}` |
+| **서버 승인·금액·수신자 검증 후 확정**: 결제창이 성공으로 돌아오는 주소. 서버가 쿼리 금액이 주문 금액과 같은지 보고 토스 승인 API를 호출한 뒤, 응답(상태 `DONE`·금액·주문 번호)과 방송·수신자가 맞을 때만 `대기 → 확정`. 승인된 결제가 검증에 실패하면 토스에 취소를 요청 | `GET /donations/success?paymentKey=&orderId=&amount=` | 누구나(로그인이 아닌 주문으로 판단) | 확정 `200` 결과 화면(방송으로 돌아가는 링크). 금액·응답 불일치·검증 실패·결제 미완료 `400` 실패 화면(주문 `실패`), 없는 주문 `404` |
+| **결제 실패·취소**: 결제창이 실패로 돌아오는 주소. 코드 `PAY_PROCESS_CANCELED` 면 `취소`, 그 밖은 `실패`. `대기` 주문만 바뀌고 이미 끝난 주문은 그대로(확정은 유지) | `GET /donations/fail?code=&message=&orderId=` | 누구나 | `200` 취소·실패 결과 화면(다시 시도 링크). 없는 주문 `404`, `orderId` 없음 `400` |
+| **승인 통지(웹훅)**: 토스가 보내는 승인 통지. 본문의 `data.paymentKey`, `data.orderId` 만 읽고 **본문을 믿지 않고** 토스 조회 API로 다시 확인해 같은 확정 로직을 탐. 모르는 주문·미완료·불일치는 아무것도 바꾸지 않음(웹훅으로는 주문을 `실패`로 만들지 않아, 이후 통지로 확정될 수 있음) | `POST /donations/webhook` (JSON, 로그인·CSRF 토큰 불필요) | 결제사 | 항상 `200` (본문 오류 포함) |
+| **중복 확정 방지**: 새로고침·웹훅 재전송·두 경로가 겹쳐도 한 번만 확정. `대기 → 확정` 은 `대기` 일 때만 바꾸는 조건부 갱신으로 한 번만 일어나고, `orderId`·`paymentKey` 에 유니크 제약. 이미 확정된 주문의 통지는 같은 결과를 돌려주고 아무것도 바꾸지 않음 | 위 두 경로 | — | 합계 불변 |
+| **방송별 후원 내역·합계**: 확정된 후원만 최신 순으로(후원자 닉네임·금액·메시지·시각), 합계는 확정 금액의 합. 대기·실패·취소 주문은 제외. 메시지는 항상 이스케이프된 텍스트이고 회원 DB id는 싣지 않음 | 녹화방송 상세, 라이브 시청 화면 | 누구나(공개) | `200` |
+
+- 결제창이 페이지를 떠났다 돌아오므로, 라이브 시청 중 후원하면 결과 화면의 링크로 시청 화면에 돌아옵니다.
+- **수신자는 서버가 방송 소유자로 정합니다.** 클라이언트가 보낸 수신자·금액은 신뢰하지 않습니다.
+- 결제를 끝내지 않은 `대기` 주문은 정리하지 않고 남지만 내역·합계에는 들어가지 않습니다. 방송이 삭제되면 후원 기록은 남지만 화면에는 더 보이지 않습니다.
+- 이번 단계에서 하지 않는 것: 실제 결제(테스트 키만 사용), 환불·정산.
+
+**코드 구조 (`kr.devcourse.chzzk.donation`)**
+
+```
+DonationService.java            공개 인터페이스: 주문 생성(createOrder), 승인 통지 확정(confirm: 성공 리다이렉트·웹훅 공통), 실패·취소 반영(recordFailure), 방송별 내역·합계(list, total), 후원 가능 여부(canDonate)
+DonationOrder.java              후원 주문 엔티티 (주문 번호·결제 키 유니크, 방송 종류+id, 후원자, 수신자, 금액, 메시지, 상태)
+DonationOrderRepository.java    조건부 갱신(confirmIfPending·failIfPending·cancelIfPending)과 합계·내역 쿼리
+DonationStatus.java, DonationKind.java   대기/확정/실패/취소, 녹화/라이브
+DonationJsonController.java     POST /donations (주문 생성)
+DonationController.java         GET /donations/success, /donations/fail (결과 화면)
+DonationWebhookController.java  POST /donations/webhook
+DonationExceptionHandler.java   오류 응답 (JSON 경로는 {"message"}, 화면 경로는 실패 결과 화면)
+PaymentGateway.java             결제사 경계(승인 confirm·조회 query·취소 cancel). 서비스는 이 인터페이스만 안다
+TossPaymentGateway.java         토스 API 호출 구현 (시크릿 키는 여기서만 사용)
+UnavailablePaymentGateway.java  키가 없을 때의 자리표시 구현
+DonationAvailability.java       키 두 개가 모두 있을 때만 후원 사용. 클라이언트 키만 화면에 냄
+DonationConfig.java             키 유무에 따라 게이트웨이 빈 선택 (테스트는 다른 구현으로 대체)
+templates/fragments/donations.html  후원 영역(폼·합계·내역·결제창 호출), templates/donations/result.html  결과 화면
+```
+
+보안 설정(`SecurityConfig`)은 `/donations/webhook` 만 CSRF에서 제외하고, `POST /donations` 는 CSRF 토큰이 필요합니다. `POST /donations` 의 로그인 검사는 컨트롤러가 직접 해 `401` 로 답합니다(`fetch` 호출이라 로그인 화면 이동 대신 상태 코드가 필요).
+
+**자동 테스트** (결제사는 가짜 `FakePaymentGateway` 로 바꿔 네트워크 없이 확인합니다. **실제 토스 서버로는 호출하지 않았습니다**)
+
+- `DonationWebTest`: 주문 생성 `201`·`401`·`404`·`400`·CSRF 거절, 성공 리다이렉트 확정과 방송 화면의 합계·내역·이스케이프, 라이브 화면 합계, 확정 전 합계 제외, 금액을 바꾼 주소 거절, 승인 뒤 응답 불일치 시 취소, 없는 주문 `404`
+- `DonationFailWebTest`: 구매자 취소(`취소` 화면·다시 시도 링크)와 그 밖의 실패(`실패` 화면), 이미 닫힌 주문은 바뀌지 않음, 이미 확정된 주문에 실패가 와도 확정 유지, 없는 주문·`orderId` 없음
+- `DonationWebhookTest`: 웹훅만으로 확정, 같은 웹훅 반복·웹훅과 성공 리다이렉트 순서 조합·성공 리다이렉트 반복·동시 요청에서 한 번만 확정, `DONE` 아님·모르는 주문·본문 오류·금액 불일치는 `200` 에 변경 없음, 승인 API가 "이미 처리됨"이면 조회로 확인
+- `DonationDisabledWebTest`: 키가 없으면 `POST /donations` `503` 과 한국어 메시지, 방송 화면은 폼 대신 안내와 합계, 비밀 키 비노출
+- `TossPaymentGatewayTest`: 토스 승인·조회·취소 요청의 주소·인증·본문, 오류 응답·네트워크 오류 변환
+- `DonationRestartPersistenceTest`: 재시작 후에도 확정된 후원·합계가 남고 대기 주문은 합계에 들어가지 않음
+
 ### 공개 범위
 
-시청·목록 조회는 로그인 없이 공개이고, 쓰기·관리는 서버가 로그인·소유자·작성자 여부를 검사합니다.
+시청·목록 조회는 로그인 없이 공개이고, 쓰기·관리는 서버가 로그인·소유자·작성자 여부를 검사합니다. (4단계: 방송별 후원 합계·내역은 공개이고, 후원 주문 생성은 로그인한 회원만 합니다. 승인 확인 경로 `GET /donations/success`·`fail` 과 웹훅은 로그인이 아니라 주문과 결제사 확인으로 판단합니다. 자세한 것은 4단계 표.)
 
 | 범위 | 무엇을 | 비로그인 |
 | --- | --- | --- |
@@ -282,6 +349,7 @@ docs/adr/0002-live-owner-session-replaces-broadcast-key.md  송출 키 폐지, �
   - `CommentJsonWebTest`: 댓글 목록 JSON(`updatedAt`·`mine` 포함) 공개, 없는 방송 404, 라이브 화면 5초 갱신 구성
   - `CommentRestartPersistenceTest`: 재시작 후 댓글·회원 유지
   - (보조) `TestLogin`, `MemberSessions`, `TestWeb`, `LivePages`, `SignalingClient`: 테스트용 로그인·CSRF·WebSocket 클라이언트
+- 4단계: 위 [4단계: 도네이션](#4단계-도네이션)의 "자동 테스트" 목록 (`Donation*Test`, `TossPaymentGatewayTest`, 보조 `FakePaymentGateway`)
 
 ## 휴대폰 연결 방법
 
@@ -344,7 +412,81 @@ CHZZK_SSL_KEY_STORE_PASSWORD=<keytool에서 정한 비밀번호> \
 
 ## 직접 확인 절차
 
-1단계·2단계 절차는 당시 그대로 두었습니다. 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하므로, 해당 절차 전에 헤더의 **회원가입** 으로 가입(자동 로그인)하세요. 1단계 curl 예시는 로그인 쿠키와 CSRF 토큰이 없으면 `302 /login` 또는 `403` 이 돌아오고, 로그인 포함 요청은 [3단계 curl 예시](#3단계-인증인가와-댓글-1)에 있습니다.
+1단계·2단계 절차는 당시 그대로 두었습니다. 4단계(도네이션)는 맨 위에 있고 토스 테스트 키가 필요합니다. 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하므로, 해당 절차 전에 헤더의 **회원가입** 으로 가입(자동 로그인)하세요. 1단계 curl 예시는 로그인 쿠키와 CSRF 토큰이 없으면 `302 /login` 또는 `403` 이 돌아오고, 로그인 포함 요청은 [3단계 curl 예시](#3단계-인증인가와-댓글-1)에 있습니다.
+
+### 4단계: 도네이션
+
+화면의 "성공"이 아니라 **서버가 결제사에 승인을 확인했을 때만** 후원이 확정되는지 확인합니다. **아래 절차는 문서로만 정리한 것이고, 이 문서를 쓴 시점에 실제 토스 테스트 결제는 실행하지 않았습니다**(자동 테스트는 가짜 결제사로 같은 흐름을 검증합니다).
+
+준비
+
+1. 토스 테스트 키를 준비합니다([토스페이먼츠 테스트 키 준비](#토스페이먼츠-테스트-키-준비)).
+2. 서버를 띄웁니다(깨끗한 상태는 먼저 `data/` 삭제): `TOSS_CLIENT_KEY=test_ck_<클라이언트키> TOSS_SECRET_KEY=test_sk_<시크릿키> ./gradlew bootRun`
+3. 일반 창에서 방송 소유자(회원 A)로 가입해 녹화방송 하나를 등록하고, 시크릿 창에서 후원자(회원 B)로 가입합니다.
+
+**브라우저로 확인**
+
+1. **키 없음**: 키 없이 서버를 띄우면 방송 화면의 후원 영역에 "결제 키가 설정되지 않아 후원을 받을 수 없습니다."만 보이고 합계는 0원입니다. 다른 화면은 평소처럼 동작합니다.
+2. **테스트 결제 성공**: B로 A의 방송 화면에서 금액(5,000원)과 메시지를 입력하고 **후원하기** 를 누릅니다. 토스 결제창에서 테스트 결제를 진행해 결제를 마칩니다(테스트 환경에서는 개발자센터 안내대로 테스트 카드 정보를 쓰며 실제 청구되지 않습니다). 결과 화면에 후원 확정이 보이고, 방송으로 돌아가면 합계 5,000원과 내역(B 닉네임·금액·메시지)이 보입니다.
+3. **성공 페이지 새로고침**: 결과 화면(주소가 `/donations/success?...`)에서 새로고침을 여러 번 누릅니다. 같은 결과 화면이 나오고, 방송 화면의 합계는 5,000원 그대로이며 내역도 1건입니다(중복 적립 없음).
+4. **결제 실패**: 후원하기 후 결제창에서 거절되는 테스트 결제(개발자센터의 테스트 안내 참고)를 진행합니다. "결제에 실패해 후원하지 않았습니다." 화면이 나오고 합계·내역은 그대로입니다.
+5. **결제창 닫기(취소)**: 후원하기 후 결제창을 닫습니다(결제창의 취소). "결제를 취소해 후원하지 않았습니다." 화면과 다시 시도 링크가 나오고, 합계·내역은 그대로입니다. 다시 시도하면 새 후원 주문으로 결제할 수 있습니다.
+6. **거절되는 후원**
+   - 로그인하지 않은 창: 후원 폼 대신 "로그인 후 후원" 링크만 보입니다.
+   - 소유자 A로 자기 방송: "이 방송에는 후원할 수 없습니다."만 보이고 폼이 없습니다.
+   - 라이브 방송도 같습니다(2단계 절차로 라이브를 시작하고 시청 화면에서 확인).
+7. **재시작**: 서버를 `Ctrl+C` 로 끄고 같은 `data/` 로 다시 띄웁니다. 확정된 후원과 합계가 그대로 남아 있습니다.
+
+**curl로 확인: 화면 버튼이 아니라 서버가 거절·중복 방지를 한다**
+
+토스 결제창 없이도 서버 응답을 볼 수 있는 항목입니다(깨끗한 `data/` 에서 시작해 녹화방송 번호가 1이라고 가정). [3단계 curl 예시](#3단계-인증인가와-댓글-1)의 도우미(`tok`, `code`, `refresh`)와 가입 절차를 먼저 실행해 `owner1.jar`(소유자), `other1.jar`(후원자), `anon.jar`(비로그인) 쿠키 파일과 소유자의 녹화방송(1번)이 있어야 합니다. 주석은 기대하는 결과입니다.
+
+```bash
+BASE=http://localhost:8080
+J='Content-Type: application/json'
+order() { curl -s -b "$1.jar" -H "$J" -H "X-XSRF-TOKEN: $(tok $1.jar)" \
+          -d "{\"kind\":\"RECORDED\",\"broadcastId\":1,\"amount\":${2:-5000},\"message\":\"curl 후원\"}" $BASE/donations; }
+
+# 비로그인 -> 401
+curl -s -o /dev/null -w "%{http_code}\n" -b anon.jar -H "$J" -H "X-XSRF-TOKEN: $(tok anon.jar)" \
+     -d '{"kind":"RECORDED","broadcastId":1,"amount":5000}' $BASE/donations
+# CSRF 토큰 없이 -> 403
+curl -s -o /dev/null -w "%{http_code}\n" -b other1.jar -H "$J" \
+     -d '{"kind":"RECORDED","broadcastId":1,"amount":5000}' $BASE/donations
+# 소유자가 자기 방송에 -> 400 {"message":"자기 방송에는 후원할 수 없습니다."}
+order owner1
+# 금액 규칙 위반(500원) -> 400 {"message":"후원 금액은 1,000원 단위로 ..."}
+order other1 500
+# 후원자 -> 201 {"orderId":"...","amount":5000,"orderName":"hello 후원","clientKey":"test_ck_...",...}
+order other1
+```
+
+**금액을 바꾼 success 주소 거절**: 위 `order other1` 응답의 `orderId` 를 `ORDER` 에 넣고, 주문 금액(5,000원)과 다른 금액으로 성공 주소를 직접 엽니다. 서버는 토스에 승인 요청을 보내지 않고 주문을 `실패` 로 닫습니다.
+
+```bash
+ORDER=<orderId>
+curl -s -o /dev/null -w "%{http_code}\n" "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=1000"   # 400 (금액이 달라 후원을 확정하지 않았습니다)
+curl -s $BASE/broadcasts/1 | grep -c "curl 후원"                                                                  # 0 (합계·내역에 없음)
+```
+
+**웹훅 재전송: 반복해도 합계가 늘지 않는다**: 웹훅은 토스가 이 서버를 호출하므로 공개 주소가 필요합니다. `cloudflared tunnel --url http://localhost:8080` 으로 얻은 주소를 `PUBLIC` 에 넣고, 개발자센터에 `$PUBLIC/donations/webhook` 을 등록해 둡니다(등록 없이 아래 curl만으로도 재전송을 흉내낼 수 있습니다). 브라우저에서 후원을 한 번 성공시킨 뒤 결과 화면 주소의 `paymentKey`·`orderId` 를 가져옵니다.
+
+```bash
+PUBLIC=https://<임의이름>.trycloudflare.com
+PK=<결과 화면 주소의 paymentKey>; OID=<결과 화면 주소의 orderId>
+for i in 1 2 3; do
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST $PUBLIC/donations/webhook -H 'Content-Type: application/json' \
+       -d "{\"eventType\":\"PAYMENT_STATUS_CHANGED\",\"data\":{\"paymentKey\":\"$PK\",\"orderId\":\"$OID\"}}"   # 매번 200 (로그인·CSRF 토큰 불필요)
+done
+curl -s $BASE/broadcasts/1 | grep -o "후원 합계.*원"   # 합계가 웹훅 전과 같음(내역도 1건)
+# 모르는 주문번호 -> 마찬가지로 200이고 아무것도 바뀌지 않음
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $PUBLIC/donations/webhook -H 'Content-Type: application/json' \
+     -d '{"data":{"paymentKey":"x","orderId":"no-such-order"}}'
+```
+
+이미 확정된 주문의 웹훅·성공 주소 재호출은 토스를 다시 부르지 않고 같은 결과를 돌려줍니다. 결제를 마치지 않은 `대기` 주문에 웹훅이 오면 서버는 토스에 조회해 결제가 `DONE` 일 때만 확정하고, 그렇지 않으면 주문을 바꾸지 않습니다.
+
+이 상태 코드와 결과는 자동 테스트(`DonationWebTest`, `DonationFailWebTest`, `DonationWebhookTest`, `DonationDisabledWebTest`, `DonationRestartPersistenceTest`)가 가짜 결제사로 같은 요청을 보내 검증합니다. 위의 토스 결제창·웹훅 등록·cloudflared 구간은 실제로 실행해 확인하지 않았으므로 직접 확인해 주세요.
 
 ### 3단계: 인증·인가와 댓글
 

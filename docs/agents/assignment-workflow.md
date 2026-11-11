@@ -7,6 +7,7 @@
 | 1 | `https://classroom.codemit.kr/classes/6/problems/61/submit` | `step-1` |
 | 2 | `https://classroom.codemit.kr/classes/6/problems/62/submit` | `step-2` |
 | 3 | `https://classroom.codemit.kr/classes/6/problems/63/submit` | `step-3` |
+| 4 | `https://classroom.codemit.kr/classes/6/problems/64/submit` | `step-4` |
 | N | 앞 단계 번호 + 1 (페이지 제목으로 확인) | `step-N` |
 
 ## 단계
