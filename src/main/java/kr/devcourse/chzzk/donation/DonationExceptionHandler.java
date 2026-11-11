@@ -23,6 +23,11 @@ class DonationExceptionHandler {
     void unauthorized() {
     }
 
+    @ExceptionHandler(DonationUnavailableException.class)
+    ResponseEntity<Map<String, String>> unavailable(DonationUnavailableException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("message", e.getMessage()));
+    }
+
     @ExceptionHandler(InvalidDonationException.class)
     ResponseEntity<Map<String, String>> invalid(InvalidDonationException e) {
         return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));

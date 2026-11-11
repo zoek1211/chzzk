@@ -2,7 +2,6 @@ package kr.devcourse.chzzk.donation;
 
 import jakarta.servlet.http.HttpServletRequest;
 import kr.devcourse.chzzk.member.MemberPrincipal;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,17 +24,20 @@ class DonationJsonController {
     }
 
     private final DonationService donations;
-    private final String clientKey;
+    private final DonationAvailability availability;
 
-    DonationJsonController(DonationService donations, @Value("${chzzk.toss.client-key:}") String clientKey) {
+    DonationJsonController(DonationService donations, DonationAvailability availability) {
         this.donations = donations;
-        this.clientKey = clientKey;
+        this.availability = availability;
     }
 
     @PostMapping("/donations")
     @ResponseStatus(HttpStatus.CREATED)
     OrderResponse create(@RequestBody CreateRequest request, @AuthenticationPrincipal MemberPrincipal me,
                          HttpServletRequest http) {
+        if (!availability.isEnabled()) {
+            throw new DonationUnavailableException();
+        }
         if (me == null) {
             throw new DonationLoginRequiredException();
         }
@@ -45,7 +47,7 @@ class DonationJsonController {
         DonationService.OrderInfo order = donations.createOrder(request.kind(), request.broadcastId(),
                 me.memberId(), request.amount(), request.message());
         String base = ServletUriComponentsBuilder.fromContextPath(http).build().toUriString();
-        return new OrderResponse(order.orderId(), order.amount(), order.orderName(), clientKey,
+        return new OrderResponse(order.orderId(), order.amount(), order.orderName(), availability.clientKey(),
                 base + "/donations/success", base + "/donations/fail");
     }
 }

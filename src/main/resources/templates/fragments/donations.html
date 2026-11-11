@@ -5,10 +5,13 @@
 <section th:fragment="donations(kind, broadcastId)" id="donations" class="donations"
          th:with="donationList=${@donationService.list(kind, broadcastId)},
                   donationTotal=${@donationService.total(kind, broadcastId)},
-                  canDonate=${@donationService.canDonate(kind, broadcastId, currentMember?.memberId())}"
+                  donationEnabled=${@donationAvailability.enabled},
+                  canDonate=${donationEnabled and @donationService.canDonate(kind, broadcastId, currentMember?.memberId())}"
          th:attr="data-kind=${kind.name()},data-broadcast-id=${broadcastId}">
     <h2>후원</h2>
     <p class="donation-total">후원 합계 <strong th:text="${#numbers.formatInteger(donationTotal, 1, 'COMMA')} + '원'">0원</strong></p>
+
+    <p class="meta donation-disabled" th:unless="${donationEnabled}">결제 키가 설정되지 않아 후원을 받을 수 없습니다.</p>
 
     <div th:if="${canDonate}" class="donation-form">
         <div class="donation-amounts">
@@ -27,10 +30,10 @@
         <button type="button" class="button donation-submit">후원하기</button>
         <p class="meta donation-error" role="alert" hidden></p>
     </div>
-    <p class="meta" th:if="${currentMember == null}">
+    <p class="meta" th:if="${donationEnabled and currentMember == null}">
         <a th:href="@{/login}">로그인 후 후원</a>할 수 있습니다.
     </p>
-    <p class="meta" th:if="${currentMember != null and !canDonate}">이 방송에는 후원할 수 없습니다.</p>
+    <p class="meta" th:if="${donationEnabled and currentMember != null and !canDonate}">이 방송에는 후원할 수 없습니다.</p>
 
     <ul class="donation-list">
         <li th:each="d : ${donationList}" class="donation">
