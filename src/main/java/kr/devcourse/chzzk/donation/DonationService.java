@@ -108,13 +108,14 @@ public class DonationService {
             throw fail(order, "결제 금액이 후원 주문의 금액과 달라 후원을 확정하지 않았습니다.");
         }
 
-        PaymentResult result = approve(order, paymentKey, redirectAmount != null);
+        boolean redirect = redirectAmount != null;
+        PaymentResult result = approve(order, paymentKey, redirect);
         String problem = problem(order, result);
         if (problem != null) {
             if (result.isDone()) {
                 cancelQuietly(paymentKey, "후원 확정 검증 실패");
             }
-            throw fail(order, problem);
+            throw fail(order, problem, redirect);
         }
 
         int updated;
@@ -122,7 +123,7 @@ public class DonationService {
             updated = orders.confirmIfPending(orderId, paymentKey, Instant.now());
         } catch (DataIntegrityViolationException e) {
             cancelQuietly(paymentKey, "이미 다른 후원에 쓰인 결제");
-            throw fail(order, "이미 다른 후원에 쓰인 결제입니다.");
+            throw fail(order, "이미 다른 후원에 쓰인 결제입니다.", redirect);
         }
         if (updated == 0) {
             DonationOrder current = orders.findWithDonor(orderId).orElseThrow(DonationOrderNotFoundException::new);
@@ -176,7 +177,7 @@ public class DonationService {
             }
         } catch (PaymentGatewayException e) {
             log.warn("결제사 호출 실패 order={} code={}", order.getOrderId(), e.code());
-            throw fail(order, "결제 승인을 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+            throw fail(order, "결제 승인을 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", viaConfirm);
         }
     }
 
@@ -200,7 +201,14 @@ public class DonationService {
     }
 
     private DonationRejectedException fail(DonationOrder order, String reason) {
-        orders.failIfPending(order.getOrderId(), reason);
+        return fail(order, reason, true);
+    }
+
+    /** 웹훅은 주문 상태를 바꾸지 않는다(결제가 아직 끝나지 않았을 수 있어, 이후 통지로 확정될 수 있다). */
+    private DonationRejectedException fail(DonationOrder order, String reason, boolean persist) {
+        if (persist) {
+            orders.failIfPending(order.getOrderId(), reason);
+        }
         return rejected(order, reason);
     }
 

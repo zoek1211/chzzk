@@ -38,7 +38,7 @@ class SecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-                        .ignoringRequestMatchers("/ws/**"))
+                        .ignoringRequestMatchers("/ws/**", "/donations/webhook"))
                 .formLogin(form -> form
                         .loginPage("/login")
                         .defaultSuccessUrl("/")
