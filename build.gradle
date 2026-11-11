@@ -36,4 +36,17 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+
+	// 테스트가 데이터 디렉터리를 따로 지정하지 않아도 저장소의 ./data(로컬 실행 데이터)를 건드리지 않게 한다.
+	environment 'CHZZK_DATA_DIR', layout.buildDirectory.dir('test-data').get().asFile.absolutePath
+
+	// 그래도 테스트가 ./data 를 새로 만들면 실패시킨다 (docs/agents/assignment-workflow.md '함정' 참고).
+	def repoDataDir = file('data')
+	def dataDirExisted = false
+	doFirst { dataDirExisted = repoDataDir.exists() }
+	doLast {
+		if (!dataDirExisted && repoDataDir.exists()) {
+			throw new GradleException('테스트가 저장소의 ./data 를 만들었습니다. 테스트는 @TempDir 또는 --chzzk.data-dir 인자로 임시 디렉터리를 써야 합니다.')
+		}
+	}
 }
