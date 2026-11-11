@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('후원 결과')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: header}"></header>
+<main class="container narrow">
+    <th:block th:if="${success}">
+        <h1>후원이 완료되었습니다</h1>
+        <p><strong th:text="${#numbers.formatInteger(amount, 1, 'COMMA')} + '원'">5,000원</strong>을 후원했습니다.</p>
+        <p class="donation-message-text" th:if="${message != null}" th:text="${message}">메시지</p>
+    </th:block>
+    <th:block th:unless="${success}">
+        <h1>후원을 완료하지 못했습니다</h1>
+        <p th:text="${reason}">사유</p>
+    </th:block>
+    <p th:if="${broadcastId != null}">
+        <a class="button" th:href="${kind.name() == 'LIVE'} ? @{/live/{id}(id=${broadcastId})} : @{/broadcasts/{id}(id=${broadcastId})}">방송으로 돌아가기</a>
+    </p>
+</main>
+</body>
+</html>

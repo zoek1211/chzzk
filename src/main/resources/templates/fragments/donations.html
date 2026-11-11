@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<body>
+<!-- 사용: <section th:replace="~{fragments/donations :: donations(${donationRecordedKind}, ${broadcast.id})}"></section> (kind: DonationKind) -->
+<section th:fragment="donations(kind, broadcastId)" id="donations" class="donations"
+         th:with="donationList=${@donationService.list(kind, broadcastId)},
+                  donationTotal=${@donationService.total(kind, broadcastId)},
+                  canDonate=${@donationService.canDonate(kind, broadcastId, currentMember?.memberId())}"
+         th:attr="data-kind=${kind.name()},data-broadcast-id=${broadcastId}">
+    <h2>후원</h2>
+    <p class="donation-total">후원 합계 <strong th:text="${#numbers.formatInteger(donationTotal, 1, 'COMMA')} + '원'">0원</strong></p>
+
+    <div th:if="${canDonate}" class="donation-form">
+        <div class="donation-amounts">
+            <button type="button" class="button button-secondary" data-amount="1000">1,000원</button>
+            <button type="button" class="button button-secondary" data-amount="5000">5,000원</button>
+            <button type="button" class="button button-secondary" data-amount="10000">10,000원</button>
+        </div>
+        <label>
+            금액 (1,000원 단위, 1,000~1,000,000원)
+            <input type="number" class="donation-amount" min="1000" max="1000000" step="1000" value="5000">
+        </label>
+        <label>
+            메시지 (선택, 100자 이하)
+            <input type="text" class="donation-message" maxlength="100">
+        </label>
+        <button type="button" class="button donation-submit">후원하기</button>
+        <p class="meta donation-error" role="alert" hidden></p>
+    </div>
+    <p class="meta" th:if="${currentMember == null}">
+        <a th:href="@{/login}">로그인 후 후원</a>할 수 있습니다.
+    </p>
+    <p class="meta" th:if="${currentMember != null and !canDonate}">이 방송에는 후원할 수 없습니다.</p>
+
+    <ul class="donation-list">
+        <li th:each="d : ${donationList}" class="donation">
+            <strong th:text="${d.donorNickname}">닉네임</strong>
+            <span th:text="${#numbers.formatInteger(d.amount, 1, 'COMMA')} + '원'">1,000원</span>
+            <time class="meta" th:text="${#temporals.format(d.confirmedAt, 'yyyy-MM-dd HH:mm', 'Asia/Seoul')}">2026-01-01</time>
+            <p class="donation-message-text" th:if="${d.message != null}" th:text="${d.message}">메시지</p>
+        </li>
+    </ul>
+    <p class="empty" th:if="${#lists.isEmpty(donationList)}">아직 후원이 없습니다.</p>
+
+    <th:block th:if="${canDonate}">
+        <script src="https://js.tosspayments.com/v2/standard"></script>
+        <script th:inline="none">
+            (function () {
+                var root = document.getElementById('donations');
+                var amountInput = root.querySelector('.donation-amount');
+                var messageInput = root.querySelector('.donation-message');
+                var submit = root.querySelector('.donation-submit');
+                var error = root.querySelector('.donation-error');
+                var token = document.querySelector('meta[name="_csrf"]');
+                var header = document.querySelector('meta[name="_csrf_header"]');
+                function showError(text) {
+                    error.textContent = text;
+                    error.hidden = false;
+                    submit.disabled = false;
+                }
+                root.querySelectorAll('[data-amount]').forEach(function (button) {
+                    button.addEventListener('click', function () { amountInput.value = button.dataset.amount; });
+                });
+                submit.addEventListener('click', function () {
+                    error.hidden = true;
+                    submit.disabled = true;
+                    var headers = {'Content-Type': 'application/json'};
+                    if (token && header) { headers[header.content] = token.content; }
+                    fetch('/donations', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({
+                            kind: root.dataset.kind,
+                            broadcastId: Number(root.dataset.broadcastId),
+                            amount: Number(amountInput.value),
+                            message: messageInput.value
+                        })
+                    }).then(function (response) {
+                        return response.json().catch(function () { return {}; }).then(function (data) {
+                            if (response.status === 401) { throw new Error('로그인한 뒤 후원해 주세요.'); }
+                            if (!response.ok) { throw new Error(data.message || '후원 주문을 만들지 못했습니다.'); }
+                            return data;
+                        });
+                    }).then(function (order) {
+                        if (!order.clientKey) { throw new Error('결제를 사용할 수 없습니다.'); }
+                        if (typeof TossPayments === 'undefined') { throw new Error('결제창을 불러오지 못했습니다. 새로고침해 주세요.'); }
+                        return TossPayments(order.clientKey).payment({customerKey: TossPayments.ANONYMOUS}).requestPayment({
+                            method: 'CARD',
+                            amount: {currency: 'KRW', value: order.amount},
+                            orderId: order.orderId,
+                            orderName: order.orderName,
+                            successUrl: order.successUrl,
+                            failUrl: order.failUrl
+                        });
+                    }).then(function () { submit.disabled = false; })
+                      .catch(function (e) { showError(e.message || '후원을 시작하지 못했습니다.'); });
+                });
+            })();
+        </script>
+    </th:block>
+</section>
+</body>
+</html>

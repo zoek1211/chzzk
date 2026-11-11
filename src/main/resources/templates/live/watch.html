@@ -27,6 +27,7 @@
             <button type="submit" class="button button-secondary">삭제</button>
         </form>
     </th:block>
+    <section th:replace="~{fragments/donations :: donations(${donationLiveKind}, ${live.id})}"></section>
     <section th:replace="~{fragments/comments :: comments(${liveKind}, ${live.id})}"></section>
     <p><a th:href="@{/broadcasts}">← 목록으로</a></p>
 </main>
