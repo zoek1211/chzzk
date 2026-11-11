@@ -36,7 +36,7 @@ class DonationRestartPersistenceTest {
 
             String confirmedOrder = orderOf(mvc, donor, broadcastId, 5000, "재시작해도 남는 후원");
             orderOf(mvc, donor, broadcastId, 9000, "결제하지 않은 주문");
-            mvc.perform(get("/donations/success").param("paymentKey", "pk_restart")
+            mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_restart")
                             .param("orderId", confirmedOrder).param("amount", "5000"))
                     .andExpect(status().isOk());
         }

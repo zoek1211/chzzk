@@ -63,6 +63,8 @@ java -jar build/libs/chzzk-0.0.1-SNAPSHOT.jar
 | `CHZZK_SSL_KEY_STORE_TYPE` | `PKCS12` | 키스토어 종류 |
 | `TOSS_CLIENT_KEY` | (없음) | 토스페이먼츠 클라이언트 키(`test_ck_...`, 결제창을 여는 공개 값). 시크릿 키와 **둘 다** 있어야 후원이 켜짐 |
 | `TOSS_SECRET_KEY` | (없음) | 토스페이먼츠 시크릿 키(`test_sk_...`, 비밀 값. 서버만 사용하고 화면·로그에 내지 않음) |
+| `TOSS_CONNECT_TIMEOUT` | `5s` | 토스 API 연결 제한 시간 |
+| `TOSS_READ_TIMEOUT` | `10s` | 토스 API 응답 읽기 제한 시간. 넘으면 일시 오류로 보고 결제를 조회해 다시 확인함 |
 
 예시:
 
@@ -214,28 +216,32 @@ HTTP 경로와 상태 코드는 아래와 같습니다. 상태 변경 요청은 
 | --- | --- | --- | --- |
 | **후원 대상·금액 선택**: 녹화방송 상세·라이브 시청 화면의 후원 영역에서 금액 버튼(1,000·5,000·10,000원)이나 입력(1,000원 단위, 1,000~1,000,000원)과 메시지(선택, 100자 이하)를 고름 | `GET /broadcasts/{id}`, `GET /live/{id}` 하단 | 로그인한 회원(자기 방송 제외). 비로그인은 로그인 링크, 키 없음은 안내만 | `200` |
 | **테스트 결제 요청**: 서버가 후원 주문(`대기`)을 만들고 수신자(방송 소유자)·금액을 고정한 뒤, 브라우저가 그 주문 번호·금액으로 토스 결제창을 엶 | `POST /donations` (JSON `{"kind", "broadcastId", "amount", "message"}`, CSRF 토큰 필요) | 로그인한 회원 | 성공 `201 {"orderId", "amount", "orderName", "clientKey", "successUrl", "failUrl"}`. 비로그인 `401`, 없는 방송 `404`, 금액·메시지·자기 방송·소유자 없는 방송·방송 미선택 `400 {"message"}`, CSRF 없음 `403`, 키 없음 `503 {"message"}` |
-| **서버 승인·금액·수신자 검증 후 확정**: 결제창이 성공으로 돌아오는 주소. 서버가 쿼리 금액이 주문 금액과 같은지 보고 토스 승인 API를 호출한 뒤, 응답(상태 `DONE`·금액·주문 번호)과 방송·수신자가 맞을 때만 `대기 → 확정`. 승인된 결제가 검증에 실패하면 토스에 취소를 요청 | `GET /donations/success?paymentKey=&orderId=&amount=` | 누구나(로그인이 아닌 주문으로 판단) | 확정 `200` 결과 화면(방송으로 돌아가는 링크). 금액·응답 불일치·검증 실패·결제 미완료 `400` 실패 화면(주문 `실패`), 없는 주문 `404` |
-| **결제 실패·취소**: 결제창이 실패로 돌아오는 주소. 코드 `PAY_PROCESS_CANCELED` 면 `취소`, 그 밖은 `실패`. `대기` 주문만 바뀌고 이미 끝난 주문은 그대로(확정은 유지) | `GET /donations/fail?code=&message=&orderId=` | 누구나 | `200` 취소·실패 결과 화면(다시 시도 링크). 없는 주문 `404`, `orderId` 없음 `400` |
-| **승인 통지(웹훅)**: 토스가 보내는 승인 통지. 본문의 `data.paymentKey`, `data.orderId` 만 읽고 **본문을 믿지 않고** 토스 조회 API로 다시 확인해 같은 확정 로직을 탐. 모르는 주문·미완료·불일치는 아무것도 바꾸지 않음(웹훅으로는 주문을 `실패`로 만들지 않아, 이후 통지로 확정될 수 있음) | `POST /donations/webhook` (JSON, 로그인·CSRF 토큰 불필요) | 결제사 | 항상 `200` (본문 오류 포함) |
+| **서버 승인·금액·수신자 검증 후 확정**: 결제창이 성공으로 돌아오는 주소. 서버가 쿼리 금액이 주문 금액과 같은지 보고 토스 승인 API를 호출한 뒤, 응답(상태 `DONE`·금액·주문 번호)과 방송·수신자가 맞을 때만 `대기 → 확정`. **이 주문의 결제**가 검증에 실패하면 토스에 취소를 요청하고, 다른 주문의 결제(주문 번호가 다름)나 이미 다른 후원에 쓰인 결제 키는 취소하지 않음. 승인 호출이 네트워크 오류·시간 초과·"이미 처리됨" 등으로 실패하면 조회 API로 다시 확인: `DONE` 이면 그대로 검증·확정, 끝난 비완료 상태(중단·만료·취소)나 확정적인 카드 거절 코드면 `실패`, 조회도 실패하거나 아직 진행 중이면 `대기` 로 두고 웹훅·다시 열기로 확정 | `GET /donations/success?paymentKey=&orderId=&amount=` | 로그인한 **후원자 본인**만. 비로그인은 로그인 화면으로 `302`(로그인 뒤 이 주소로 돌아옴) | 확정 `200` 결과 화면(방송으로 돌아가는 링크). 금액·응답 불일치·검증 실패·결제 실패 `400` 실패 화면(주문 `실패`), 결제 확인이 지연돼 `대기` 로 남으면 `202` 에 "결제 확인이 지연되고 있으며 결제가 확인되면 후원이 반영됩니다.", 후원자가 아님 `403`(주문 정보 없이 한 문장), 없는 주문 `404`, 필수 값 누락·형식 오류 `400`. 화면 경로의 `403`·`404`·`400` 은 모두 한국어 한 문장을 보임 |
+| **결제 실패·취소**: 결제창이 실패로 돌아오는 주소. 코드 `PAY_PROCESS_CANCELED` 면 `취소`, 그 밖은 `실패`. `대기` 주문만 바뀌고 이미 끝난 주문은 그대로(확정은 유지) | `GET /donations/fail?code=&message=&orderId=` | 로그인한 **후원자 본인**만(비로그인은 로그인 화면으로 `302`) | `200` 취소·실패 결과 화면(다시 시도 링크, 취소가 아닌 실패는 토스가 준 사유도 함께 보임). 후원자가 아님 `403`(주문 정보 없음), 없는 주문 `404`, `orderId` 없음 `400` |
+| **승인 통지(웹훅)**: 토스가 보내는 승인 통지. 본문의 `data.paymentKey`, `data.orderId` 만 읽고 **본문을 믿지 않고** 토스 조회 API로 다시 확인해 같은 확정 로직을 탐. 모르는 주문·미완료·불일치는 아무것도 바꾸지 않음(웹훅으로는 주문을 `실패`로 만들지 않아 이후 통지로 확정될 수 있고, **웹훅은 결제를 취소하지도 않음**). 호출 횟수 제한은 없음(알려진 한계: 조회로 다시 확인하므로 위조 본문으로는 확정되지 않지만 토스 조회 호출을 늘릴 수는 있음) | `POST /donations/webhook` (JSON, 로그인·CSRF 토큰 불필요) | 결제사 | 항상 `200` (본문 오류 포함) |
 | **중복 확정 방지**: 새로고침·웹훅 재전송·두 경로가 겹쳐도 한 번만 확정. `대기 → 확정` 은 `대기` 일 때만 바꾸는 조건부 갱신으로 한 번만 일어나고, `orderId`·`paymentKey` 에 유니크 제약. 이미 확정된 주문의 통지는 같은 결과를 돌려주고 아무것도 바꾸지 않음 | 위 두 경로 | — | 합계 불변 |
 | **방송별 후원 내역·합계**: 확정된 후원만 최신 순으로(후원자 닉네임·금액·메시지·시각), 합계는 확정 금액의 합. 대기·실패·취소 주문은 제외. 메시지는 항상 이스케이프된 텍스트이고 회원 DB id는 싣지 않음 | 녹화방송 상세, 라이브 시청 화면 | 누구나(공개) | `200` |
 
 - 결제창이 페이지를 떠났다 돌아오므로, 라이브 시청 중 후원하면 결과 화면의 링크로 시청 화면에 돌아옵니다.
 - **수신자는 서버가 방송 소유자로 정합니다.** 클라이언트가 보낸 수신자·금액은 신뢰하지 않습니다.
 - 결제를 끝내지 않은 `대기` 주문은 정리하지 않고 남지만 내역·합계에는 들어가지 않습니다. 방송이 삭제되면 후원 기록은 남지만 화면에는 더 보이지 않습니다.
-- 이번 단계에서 하지 않는 것: 실제 결제(테스트 키만 사용), 환불·정산.
+- 토스 호출에는 연결 5초·읽기 10초의 제한 시간이 있고(`TOSS_CONNECT_TIMEOUT`, `TOSS_READ_TIMEOUT`), 넘으면 일시 오류로 다룹니다. 결제 키는 로그에 앞 4자만 남깁니다.
+- 토스에 넘기는 `successUrl`·`failUrl` 은 요청 주소로 만들고, `server.forward-headers-strategy=framework` 로 cloudflared 같은 터널의 `X-Forwarded-*` 헤더를 반영해 공개 `https` 주소가 됩니다.
+- 이번 단계에서 하지 않는 것: 실제 결제(테스트 키만 사용), 환불·정산, 웹훅 호출 횟수 제한.
 
 **코드 구조 (`kr.devcourse.chzzk.donation`)**
 
 ```
-DonationService.java            공개 인터페이스: 주문 생성(createOrder), 승인 통지 확정(confirm: 성공 리다이렉트·웹훅 공통), 실패·취소 반영(recordFailure), 방송별 내역·합계(list, total), 후원 가능 여부(canDonate)
+DonationService.java            공개 인터페이스: 주문 생성(createOrder), 승인 통지 확정(confirmRedirect: 후원자 본인의 성공 리다이렉트, confirmWebhook), 실패·취소 반영(recordFailure), 방송별 내역·합계(list, total), 후원 가능 여부(canDonate). 방송 소유자는 방송 모듈(ownerIdOf)에게 물음
 DonationOrder.java              후원 주문 엔티티 (주문 번호·결제 키 유니크, 방송 종류+id, 후원자, 수신자, 금액, 메시지, 상태)
 DonationOrderRepository.java    조건부 갱신(confirmIfPending·failIfPending·cancelIfPending)과 합계·내역 쿼리
 DonationStatus.java, DonationKind.java   대기/확정/실패/취소, 녹화/라이브
 DonationJsonController.java     POST /donations (주문 생성)
 DonationController.java         GET /donations/success, /donations/fail (결과 화면)
 DonationWebhookController.java  POST /donations/webhook
-DonationExceptionHandler.java   오류 응답 (JSON 경로는 {"message"}, 화면 경로는 실패 결과 화면)
+DonationExceptionHandler.java   JSON 경로의 오류 응답 ({"message"})
+DonationPageExceptionHandler.java  화면 경로의 오류 응답 (결과 화면에 한국어 한 문장: 400·403·404, 지연 202)
+ApprovalNotice.java             승인 통지 경로 구분 (REDIRECT, WEBHOOK)
 PaymentGateway.java             결제사 경계(승인 confirm·조회 query·취소 cancel). 서비스는 이 인터페이스만 안다
 TossPaymentGateway.java         토스 API 호출 구현 (시크릿 키는 여기서만 사용)
 UnavailablePaymentGateway.java  키가 없을 때의 자리표시 구현
@@ -244,7 +250,7 @@ DonationConfig.java             키 유무에 따라 게이트웨이 빈 선택 
 templates/fragments/donations.html  후원 영역(폼·합계·내역·결제창 호출), templates/donations/result.html  결과 화면
 ```
 
-보안 설정(`SecurityConfig`)은 `/donations/webhook` 만 CSRF에서 제외하고, `POST /donations` 는 CSRF 토큰이 필요합니다. `POST /donations` 의 로그인 검사는 컨트롤러가 직접 해 `401` 로 답합니다(`fetch` 호출이라 로그인 화면 이동 대신 상태 코드가 필요).
+보안 설정(`SecurityConfig`)은 `/donations/success`·`/donations/fail` 에 로그인을 요구하고(비로그인은 `302` 로 로그인 화면), `/donations/webhook` 만 CSRF에서 제외하고, `POST /donations` 는 CSRF 토큰이 필요합니다. `POST /donations` 의 로그인 검사는 컨트롤러가 직접 해 `401` 로 답합니다(`fetch` 호출이라 로그인 화면 이동 대신 상태 코드가 필요).
 
 **자동 테스트** (결제사는 가짜 `FakePaymentGateway` 로 바꿔 네트워크 없이 확인합니다. **실제 토스 서버로는 호출하지 않았습니다**)
 
@@ -252,7 +258,8 @@ templates/fragments/donations.html  후원 영역(폼·합계·내역·결제창
 - `DonationFailWebTest`: 구매자 취소(`취소` 화면·다시 시도 링크)와 그 밖의 실패(`실패` 화면), 이미 닫힌 주문은 바뀌지 않음, 이미 확정된 주문에 실패가 와도 확정 유지, 없는 주문·`orderId` 없음
 - `DonationWebhookTest`: 웹훅만으로 확정, 같은 웹훅 반복·웹훅과 성공 리다이렉트 순서 조합·성공 리다이렉트 반복·동시 요청에서 한 번만 확정, `DONE` 아님·모르는 주문·본문 오류·금액 불일치는 `200` 에 변경 없음, 승인 API가 "이미 처리됨"이면 조회로 확인
 - `DonationDisabledWebTest`: 키가 없으면 `POST /donations` `503` 과 한국어 메시지, 방송 화면은 폼 대신 안내와 합계, 비밀 키 비노출
-- `TossPaymentGatewayTest`: 토스 승인·조회·취소 요청의 주소·인증·본문, 오류 응답·네트워크 오류 변환
+- `DonationSafetyWebTest`: 남의 결제 키로 성공 주소·웹훅을 호출해도 그 결제를 취소하지 않음, 웹훅은 금액이 달라도 취소하지 않음, 이미 쓰인 결제 키는 취소하지 않음, 승인 호출 실패 뒤 조회로 확정·지연 `202`·끝난 상태 `실패`·카드 거절, 비로그인 `302`·다른 회원 `403`(주문 정보 없음), 실패 사유 이스케이프, 화면 경로의 한국어 오류 문장, 로그에 결제 키 전체가 없음
+- `TossPaymentGatewayTest`: 토스 승인·조회·취소 요청의 주소·인증·본문, 오류 응답·네트워크 오류·읽기 시간 초과 변환
 - `DonationRestartPersistenceTest`: 재시작 후에도 확정된 후원·합계가 남고 대기 주문은 합계에 들어가지 않음
 
 ### 공개 범위
@@ -461,11 +468,19 @@ order other1 500
 order other1
 ```
 
+**성공 주소는 후원자 본인만**: 로그인하지 않고 열면 `302`(로그인 화면), 다른 회원(`owner1.jar`)으로 열면 `403` 이고 주문은 바뀌지 않습니다.
+
+```bash
+ORDER=<위 order other1 응답의 orderId>
+curl -s -o /dev/null -w "%{http_code}\n" "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=5000"             # 302 -> /login
+curl -s -o /dev/null -w "%{http_code}\n" -b owner1.jar "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=5000"   # 403
+```
+
 **금액을 바꾼 success 주소 거절**: 위 `order other1` 응답의 `orderId` 를 `ORDER` 에 넣고, 주문 금액(5,000원)과 다른 금액으로 성공 주소를 직접 엽니다. 서버는 토스에 승인 요청을 보내지 않고 주문을 `실패` 로 닫습니다.
 
 ```bash
 ORDER=<orderId>
-curl -s -o /dev/null -w "%{http_code}\n" "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=1000"   # 400 (금액이 달라 후원을 확정하지 않았습니다)
+curl -s -o /dev/null -w "%{http_code}\n" -b other1.jar "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=1000"   # 400 (금액이 달라 후원을 확정하지 않았습니다)
 curl -s $BASE/broadcasts/1 | grep -c "curl 후원"                                                                  # 0 (합계·내역에 없음)
 ```
 
@@ -486,7 +501,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST $PUBLIC/donations/webhook -H 'C
 
 이미 확정된 주문의 웹훅·성공 주소 재호출은 토스를 다시 부르지 않고 같은 결과를 돌려줍니다. 결제를 마치지 않은 `대기` 주문에 웹훅이 오면 서버는 토스에 조회해 결제가 `DONE` 일 때만 확정하고, 그렇지 않으면 주문을 바꾸지 않습니다.
 
-이 상태 코드와 결과는 자동 테스트(`DonationWebTest`, `DonationFailWebTest`, `DonationWebhookTest`, `DonationDisabledWebTest`, `DonationRestartPersistenceTest`)가 가짜 결제사로 같은 요청을 보내 검증합니다. 위의 토스 결제창·웹훅 등록·cloudflared 구간은 실제로 실행해 확인하지 않았으므로 직접 확인해 주세요.
+이 상태 코드와 결과는 자동 테스트(`DonationWebTest`, `DonationFailWebTest`, `DonationWebhookTest`, `DonationSafetyWebTest`, `DonationDisabledWebTest`, `DonationRestartPersistenceTest`)가 가짜 결제사로 같은 요청을 보내 검증합니다. 위의 토스 결제창·웹훅 등록·cloudflared 구간은 실제로 실행해 확인하지 않았으므로 직접 확인해 주세요.
 
 ### 3단계: 인증·인가와 댓글
 

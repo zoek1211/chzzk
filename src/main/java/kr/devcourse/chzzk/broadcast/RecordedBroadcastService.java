@@ -4,6 +4,7 @@ import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Optional;
 import kr.devcourse.chzzk.member.Member;
 import kr.devcourse.chzzk.video.VideoStorage;
 import org.springframework.context.ApplicationEventPublisher;
@@ -41,6 +42,18 @@ public class RecordedBroadcastService {
     @Transactional(readOnly = true)
     public RecordedBroadcast find(Long id) {
         return broadcasts.findById(id).orElseThrow(RecordedBroadcastNotFoundException::new);
+    }
+
+    /**
+     * 이 녹화방송의 소유자 회원 id. 소유자 없는 방송(회원 기능 이전 데이터)이면 비어 있다.
+     * 후원처럼 다른 모듈이 "누가 소유자인가"를 물을 때 쓴다.
+     *
+     * @throws RecordedBroadcastNotFoundException 없는 녹화방송
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> ownerIdOf(Long id) {
+        Member owner = find(id).getOwner();
+        return owner == null ? Optional.empty() : Optional.of(owner.getId());
     }
 
     /**

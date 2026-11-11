@@ -7,7 +7,7 @@
                   donationTotal=${@donationService.total(kind, broadcastId)},
                   donationEnabled=${@donationAvailability.enabled},
                   canDonate=${donationEnabled and @donationService.canDonate(kind, broadcastId, currentMember?.memberId())}"
-         th:attr="data-kind=${kind.name()},data-broadcast-id=${broadcastId}">
+         th:attr="data-kind=${kind.name()},data-broadcast-id=${broadcastId},data-orders-url=@{/donations}">
     <h2>후원</h2>
     <p class="donation-total">후원 합계 <strong th:text="${#numbers.formatInteger(donationTotal, 1, 'COMMA')} + '원'">0원</strong></p>
 
@@ -69,7 +69,7 @@
                     submit.disabled = true;
                     var headers = {'Content-Type': 'application/json'};
                     if (token && header) { headers[header.content] = token.content; }
-                    fetch('/donations', {
+                    fetch(root.dataset.ordersUrl, {
                         method: 'POST',
                         headers: headers,
                         body: JSON.stringify({

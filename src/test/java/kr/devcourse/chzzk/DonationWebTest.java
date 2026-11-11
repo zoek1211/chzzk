@@ -94,6 +94,27 @@ class DonationWebTest {
     }
 
     @Test
+    void 터널의_X_Forwarded_헤더가_결제_리다이렉트_주소를_공개_주소로_만든다() throws Exception {
+        jakarta.servlet.Filter forwarded = context.getBeansOfType(
+                        org.springframework.boot.web.servlet.FilterRegistrationBean.class).values().stream()
+                .map(org.springframework.boot.web.servlet.FilterRegistrationBean::getFilter)
+                .filter(org.springframework.web.filter.ForwardedHeaderFilter.class::isInstance)
+                .findFirst().orElseThrow(() -> new AssertionError("ForwardedHeaderFilter가 등록되지 않았습니다."));
+        MockMvc proxied = org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup(context)
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity())
+                .addFilters(forwarded).build();
+        String id = recordedBy(MemberSessions.signUpAs(mvc, "방송주인"));
+        proxied.perform(post("/donations").session(MemberSessions.signUpAs(mvc, "후원자"))
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("X-Forwarded-Proto", "https").header("X-Forwarded-Host", "demo.trycloudflare.com")
+                        .header("X-Forwarded-Port", "443")
+                        .contentType(MediaType.APPLICATION_JSON).content(body("RECORDED", id, 5000, "")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.successUrl").value("https://demo.trycloudflare.com/donations/success"))
+                .andExpect(jsonPath("$.failUrl").value("https://demo.trycloudflare.com/donations/fail"));
+    }
+
+    @Test
     void 비로그인은_401이고_CSRF가_없으면_거절된다() throws Exception {
         String id = recordedBy(MemberSessions.signUpAs(mvc, "방송주인"));
         mvc.perform(post("/donations").contentType(MediaType.APPLICATION_JSON).content(body("RECORDED", id, 5000, "")))
@@ -144,9 +165,10 @@ class DonationWebTest {
     @Test
     void 성공_리다이렉트로_확정되면_방송_화면의_합계와_내역에_반영된다() throws Exception {
         String id = recordedBy(MemberSessions.signUpAs(mvc, "방송주인"));
-        String orderId = order(MemberSessions.signUpAs(mvc, "후원자"), "RECORDED", id, 5000, "<b>힘내세요</b>");
+        MockHttpSession donor = MemberSessions.signUpAs(mvc, "후원자");
+        String orderId = order(donor, "RECORDED", id, 5000, "<b>힘내세요</b>");
 
-        mvc.perform(get("/donations/success").param("paymentKey", "pk_1").param("orderId", orderId).param("amount", "5000"))
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_1").param("orderId", orderId).param("amount", "5000"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/broadcasts/" + id)));
         assertThat(gateway.confirms).hasSize(1);
@@ -155,7 +177,7 @@ class DonationWebTest {
         assertThat(detail).contains("5,000").contains("후원자").contains("&lt;b&gt;힘내세요&lt;/b&gt;")
                 .doesNotContain("<b>힘내세요</b>");
 
-        mvc.perform(get("/donations/success").param("paymentKey", "pk_1").param("orderId", orderId).param("amount", "5000"))
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_1").param("orderId", orderId).param("amount", "5000"))
                 .andExpect(status().isOk());
         assertThat(gateway.confirms).hasSize(1);
     }
@@ -163,8 +185,9 @@ class DonationWebTest {
     @Test
     void 라이브_시청_화면에도_후원_합계가_나온다() throws Exception {
         String id = liveBy(MemberSessions.signUpAs(mvc, "방송주인"));
-        String orderId = order(MemberSessions.signUpAs(mvc, "후원자"), "LIVE", id, 1000, "");
-        mvc.perform(get("/donations/success").param("paymentKey", "pk_2").param("orderId", orderId).param("amount", "1000"))
+        MockHttpSession donor = MemberSessions.signUpAs(mvc, "후원자");
+        String orderId = order(donor, "LIVE", id, 1000, "");
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_2").param("orderId", orderId).param("amount", "1000"))
                 .andExpect(status().isOk());
         assertThat(page("/live/" + id)).contains("후원 합계").contains("1,000");
     }
@@ -179,8 +202,9 @@ class DonationWebTest {
     @Test
     void 금액을_바꾼_주소는_실패하고_적립되지_않는다() throws Exception {
         String id = recordedBy(MemberSessions.signUpAs(mvc, "방송주인"));
-        String orderId = order(MemberSessions.signUpAs(mvc, "후원자"), "RECORDED", id, 5000, "");
-        mvc.perform(get("/donations/success").param("paymentKey", "pk_3").param("orderId", orderId).param("amount", "1000"))
+        MockHttpSession donor = MemberSessions.signUpAs(mvc, "후원자");
+        String orderId = order(donor, "RECORDED", id, 5000, "");
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_3").param("orderId", orderId).param("amount", "1000"))
                 .andExpect(status().isBadRequest());
         assertThat(gateway.confirms).isEmpty();
         assertThat(page("/broadcasts/" + id)).doesNotContain("5,000");
@@ -189,9 +213,10 @@ class DonationWebTest {
     @Test
     void 승인_뒤_응답이_어긋나면_결제를_취소하고_적립하지_않는다() throws Exception {
         String id = recordedBy(MemberSessions.signUpAs(mvc, "방송주인"));
-        String orderId = order(MemberSessions.signUpAs(mvc, "후원자"), "RECORDED", id, 5000, "");
+        MockHttpSession donor = MemberSessions.signUpAs(mvc, "후원자");
+        String orderId = order(donor, "RECORDED", id, 5000, "");
         gateway.onConfirm = c -> new PaymentResult("DONE", 1000, c.orderId(), c.paymentKey());
-        mvc.perform(get("/donations/success").param("paymentKey", "pk_4").param("orderId", orderId).param("amount", "5000"))
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_4").param("orderId", orderId).param("amount", "5000"))
                 .andExpect(status().isBadRequest());
         assertThat(gateway.cancels).extracting(FakePaymentGateway.Cancel::paymentKey).containsExactly("pk_4");
         assertThat(page("/broadcasts/" + id)).doesNotContain("5,000");
@@ -199,7 +224,8 @@ class DonationWebTest {
 
     @Test
     void 없는_주문은_404() throws Exception {
-        mvc.perform(get("/donations/success").param("paymentKey", "pk").param("orderId", "nope").param("amount", "1000"))
+        MockHttpSession donor = MemberSessions.signUpAs(mvc, "후원자");
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk").param("orderId", "nope").param("amount", "1000"))
                 .andExpect(status().isNotFound());
     }
 }

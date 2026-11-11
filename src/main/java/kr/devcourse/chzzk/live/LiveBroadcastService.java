@@ -104,6 +104,18 @@ public class LiveBroadcastService {
         return broadcasts.findById(id);
     }
 
+    /**
+     * 이 라이브 방송의 소유자 회원 id. 소유자 없는 방송(회원 기능 이전 데이터)이면 비어 있다.
+     * 후원처럼 다른 모듈이 "누가 소유자인가"를 물을 때 쓴다.
+     *
+     * @throws LiveNotFoundException 없는 라이브 방송
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> ownerIdOf(Long id) {
+        Member owner = broadcasts.findById(id).orElseThrow(LiveNotFoundException::new).getOwner();
+        return owner == null ? Optional.empty() : Optional.of(owner.getId());
+    }
+
     public record StartedLive(Long id) {
     }
 }

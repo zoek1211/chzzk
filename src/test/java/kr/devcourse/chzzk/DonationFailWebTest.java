@@ -43,6 +43,7 @@ class DonationFailWebTest {
     MockMvc mvc;
     String broadcastId;
     String orderId;
+    MockHttpSession donor;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -53,7 +54,8 @@ class DonationFailWebTest {
                         .param("videoUrl", "https://example.com/v.mp4"))
                 .andReturn().getResponse().getRedirectedUrl();
         broadcastId = url.substring(url.lastIndexOf('/') + 1);
-        String json = mvc.perform(post("/donations").session(MemberSessions.signUpAs(mvc, "후원자"))
+        donor = MemberSessions.signUpAs(mvc, "후원자");
+        String json = mvc.perform(post("/donations").session(donor)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"kind\":\"RECORDED\",\"broadcastId\":" + broadcastId + ",\"amount\":5000,\"message\":\"\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
@@ -66,7 +68,7 @@ class DonationFailWebTest {
 
     @Test
     void 구매자가_취소하면_취소_화면과_다시_시도_링크를_보이고_적립되지_않는다() throws Exception {
-        mvc.perform(get("/donations/fail").param("code", "PAY_PROCESS_CANCELED").param("message", "취소됨")
+        mvc.perform(get("/donations/fail").session(donor).param("code", "PAY_PROCESS_CANCELED").param("message", "취소됨")
                         .param("orderId", orderId))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("결제를 취소해 후원하지 않았습니다.")))
@@ -77,7 +79,7 @@ class DonationFailWebTest {
 
     @Test
     void 그_밖의_실패_코드는_실패_화면이고_적립되지_않는다() throws Exception {
-        mvc.perform(get("/donations/fail").param("code", "REJECT_CARD_COMPANY").param("message", "한도 초과")
+        mvc.perform(get("/donations/fail").session(donor).param("code", "REJECT_CARD_COMPANY").param("message", "한도 초과")
                         .param("orderId", orderId))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("결제에 실패해 후원하지 않았습니다.")));
@@ -86,11 +88,11 @@ class DonationFailWebTest {
 
     @Test
     void 이미_닫힌_주문은_다시_바뀌지_않아_뒤늦은_성공_리다이렉트도_거절된다() throws Exception {
-        mvc.perform(get("/donations/fail").param("code", "PAY_PROCESS_CANCELED").param("orderId", orderId))
+        mvc.perform(get("/donations/fail").session(donor).param("code", "PAY_PROCESS_CANCELED").param("orderId", orderId))
                 .andExpect(status().isOk());
-        mvc.perform(get("/donations/fail").param("code", "REJECT_CARD_COMPANY").param("orderId", orderId))
+        mvc.perform(get("/donations/fail").session(donor).param("code", "REJECT_CARD_COMPANY").param("orderId", orderId))
                 .andExpect(content().string(containsString("결제를 취소해 후원하지 않았습니다.")));
-        mvc.perform(get("/donations/success").param("paymentKey", "pk_f").param("orderId", orderId).param("amount", "5000"))
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_f").param("orderId", orderId).param("amount", "5000"))
                 .andExpect(status().isBadRequest());
         assertThat(gateway.confirms).isEmpty();
         assertThat(page()).doesNotContain("5,000");
@@ -98,9 +100,9 @@ class DonationFailWebTest {
 
     @Test
     void 이미_확정된_주문에_실패_리다이렉트가_와도_확정이_유지된다() throws Exception {
-        mvc.perform(get("/donations/success").param("paymentKey", "pk_ok").param("orderId", orderId).param("amount", "5000"))
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", "pk_ok").param("orderId", orderId).param("amount", "5000"))
                 .andExpect(status().isOk());
-        mvc.perform(get("/donations/fail").param("code", "PAY_PROCESS_CANCELED").param("orderId", orderId))
+        mvc.perform(get("/donations/fail").session(donor).param("code", "PAY_PROCESS_CANCELED").param("orderId", orderId))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("후원이 완료되었습니다")));
         assertThat(page()).contains("5,000");
@@ -108,8 +110,8 @@ class DonationFailWebTest {
 
     @Test
     void 없는_주문은_404이고_orderId가_없으면_400() throws Exception {
-        mvc.perform(get("/donations/fail").param("code", "X").param("orderId", "nope"))
+        mvc.perform(get("/donations/fail").session(donor).param("code", "X").param("orderId", "nope"))
                 .andExpect(status().isNotFound());
-        mvc.perform(get("/donations/fail").param("code", "X")).andExpect(status().isBadRequest());
+        mvc.perform(get("/donations/fail").session(donor).param("code", "X")).andExpect(status().isBadRequest());
     }
 }

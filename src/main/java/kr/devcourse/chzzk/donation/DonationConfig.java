@@ -1,5 +1,6 @@
 package kr.devcourse.chzzk.donation;
 
+import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -18,10 +19,13 @@ class DonationConfig {
     PaymentGateway paymentGateway(DonationAvailability availability,
                                   @Value("${chzzk.toss.secret-key:}") String secretKey,
                                   @Value("${chzzk.toss.base-url:" + TossPaymentGateway.DEFAULT_BASE_URL + "}")
-                                  String baseUrl) {
+                                  String baseUrl,
+                                  @Value("${chzzk.toss.connect-timeout:5s}") Duration connectTimeout,
+                                  @Value("${chzzk.toss.read-timeout:10s}") Duration readTimeout) {
         if (!availability.isEnabled()) {
             return new UnavailablePaymentGateway();
         }
-        return new TossPaymentGateway(RestClient.builder().baseUrl(baseUrl), secretKey);
+        return new TossPaymentGateway(RestClient.builder().baseUrl(baseUrl)
+                .requestFactory(TossPaymentGateway.requestFactory(connectTimeout, readTimeout)), secretKey);
     }
 }

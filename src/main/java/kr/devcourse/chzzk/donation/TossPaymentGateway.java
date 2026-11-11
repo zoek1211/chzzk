@@ -1,10 +1,14 @@
 package kr.devcourse.chzzk.donation;
 
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -19,6 +23,14 @@ public class TossPaymentGateway implements PaymentGateway {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final RestClient client;
+
+    /** 연결·읽기 제한 시간을 둔 요청 팩토리. 넘으면 {@code NETWORK_ERROR} 예외가 된다. */
+    public static ClientHttpRequestFactory requestFactory(Duration connectTimeout, Duration readTimeout) {
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder().connectTimeout(connectTimeout).build());
+        factory.setReadTimeout(readTimeout);
+        return factory;
+    }
 
     /** @param builder 기본 주소를 정한 빌더(테스트는 MockRestServiceServer를 묶는다) */
     public TossPaymentGateway(RestClient.Builder builder, String secretKey) {

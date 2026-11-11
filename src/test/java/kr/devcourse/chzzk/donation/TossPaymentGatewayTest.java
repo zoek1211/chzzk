@@ -10,8 +10,12 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -113,5 +117,33 @@ class TossPaymentGatewayTest {
         assertThatThrownBy(() -> gateway.query("pk_1"))
                 .isInstanceOfSatisfying(PaymentGatewayException.class,
                         e -> assertThat(e.code()).isEqualTo("NETWORK_ERROR"));
+    }
+
+    @Test
+    void 응답이_읽기_제한_시간을_넘기면_NETWORK_ERROR_예외가_된다() throws IOException {
+        HttpServer slow = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        slow.createContext("/", exchange -> {
+            try {
+                Thread.sleep(1500);
+                exchange.sendResponseHeaders(200, -1);
+            } catch (InterruptedException | IOException ignored) {
+                // 클라이언트가 먼저 끊었다
+            } finally {
+                exchange.close();
+            }
+        });
+        slow.start();
+        try {
+            RestClient.Builder builder = RestClient.builder()
+                    .baseUrl("http://127.0.0.1:" + slow.getAddress().getPort())
+                    .requestFactory(TossPaymentGateway.requestFactory(Duration.ofSeconds(1), Duration.ofMillis(200)));
+            TossPaymentGateway timed = new TossPaymentGateway(builder, "test_sk_x");
+
+            assertThatThrownBy(() -> timed.query("pk_1"))
+                    .isInstanceOfSatisfying(PaymentGatewayException.class,
+                            e -> assertThat(e.code()).isEqualTo("NETWORK_ERROR"));
+        } finally {
+            slow.stop(0);
+        }
     }
 }

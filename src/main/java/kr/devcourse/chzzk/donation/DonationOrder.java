@@ -117,6 +117,10 @@ class DonationOrder {
         return status;
     }
 
+    String getFailureReason() {
+        return failureReason;
+    }
+
     Instant getConfirmedAt() {
         return confirmedAt;
     }

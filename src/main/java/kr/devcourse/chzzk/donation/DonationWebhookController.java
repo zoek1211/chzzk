@@ -37,7 +37,7 @@ class DonationWebhookController {
             return;
         }
         try {
-            donations.confirm(body.data().paymentKey(), body.data().orderId(), null);
+            donations.confirmWebhook(body.data().paymentKey(), body.data().orderId());
         } catch (DonationOrderNotFoundException | DonationRejectedException e) {
             log.info("웹훅으로 후원을 확정하지 않음 order={}: {}", body.data().orderId(), e.getMessage());
         } catch (RuntimeException e) {

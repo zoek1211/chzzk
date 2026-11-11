@@ -87,7 +87,7 @@ class DonationWebhookTest {
     }
 
     void successRedirect(String paymentKey, String orderId, long amount) throws Exception {
-        mvc.perform(get("/donations/success").param("paymentKey", paymentKey).param("orderId", orderId)
+        mvc.perform(get("/donations/success").session(donor).param("paymentKey", paymentKey).param("orderId", orderId)
                 .param("amount", String.valueOf(amount)));
     }
 
@@ -149,13 +149,14 @@ class DonationWebhookTest {
         CountDownLatch start = new CountDownLatch(1);
         List<Future<?>> futures = new ArrayList<>();
         for (int i = 0; i < threads; i++) {
-            Long amount = i % 2 == 0 ? null : 7000L;
+            boolean viaWebhook = i % 2 == 0;
             futures.add(pool.submit(() -> {
                 start.await();
-                try {
-                    donations.confirm("pk-6", orderId, amount);
-                } catch (RuntimeException ignored) {
-                    // 동시 호출 중 일부는 거절될 수 있다. 합계로 확인한다.
+                // 동시 호출 중 일부는 거절될 수 있다. 합계로 확인한다.
+                if (viaWebhook) {
+                    webhook("pk-6", orderId);
+                } else {
+                    successRedirect("pk-6", orderId, 7000);
                 }
                 return null;
             }));

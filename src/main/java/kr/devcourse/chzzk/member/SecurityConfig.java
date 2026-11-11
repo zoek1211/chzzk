@@ -32,6 +32,8 @@ class SecurityConfig {
                         // 녹화방송 관리: 로그인 필수(소유자 여부는 컨트롤러가 검사해 403)
                         .requestMatchers("/broadcasts/new", "/broadcasts/*/edit", "/broadcasts/*/delete").authenticated()
                         .requestMatchers(HttpMethod.POST, "/broadcasts").authenticated()
+                        // 결제창이 후원자의 브라우저로 돌려보내는 화면: 로그인 필수(후원자 본인 여부는 서비스가 검사해 403)
+                        .requestMatchers("/donations/success", "/donations/fail").authenticated()
                         .requestMatchers(HttpMethod.POST, "/broadcasts/*/comments", "/live/*/comments",
                                 "/comments/*/edit", "/comments/*/delete").authenticated()
                         .anyRequest().permitAll())
