@@ -26,4 +26,22 @@ class DonationController {
         model.addAttribute("message", confirmed.message());
         return "donations/result";
     }
+
+    @GetMapping("/donations/fail")
+    String fail(@RequestParam(required = false) String code, @RequestParam(required = false) String message,
+                @RequestParam String orderId, Model model) {
+        DonationService.Ended ended = donations.recordFailure(orderId, code, message);
+        model.addAttribute("kind", ended.kind());
+        model.addAttribute("broadcastId", ended.broadcastId());
+        if (ended.status() == DonationStatus.CONFIRMED) {
+            model.addAttribute("success", true);
+            model.addAttribute("amount", ended.amount());
+            model.addAttribute("message", ended.message());
+        } else {
+            model.addAttribute("success", false);
+            model.addAttribute("reason", ended.status() == DonationStatus.CANCELED
+                    ? "결제를 취소해 후원하지 않았습니다." : "결제에 실패해 후원하지 않았습니다.");
+        }
+        return "donations/result";
+    }
 }
