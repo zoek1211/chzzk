@@ -45,4 +45,14 @@ interface DonationOrderRepository extends JpaRepository<DonationOrder, Long> {
             where o.orderId = :orderId and o.status = kr.devcourse.chzzk.donation.DonationStatus.PENDING
             """)
     int failIfPending(String orderId, String reason);
+
+    /** 대기 → 취소 조건부 갱신(결제창에서 구매자가 닫은 경우). */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update DonationOrder o set o.status = kr.devcourse.chzzk.donation.DonationStatus.CANCELED,
+                o.failureReason = :reason
+            where o.orderId = :orderId and o.status = kr.devcourse.chzzk.donation.DonationStatus.PENDING
+            """)
+    int cancelIfPending(String orderId, String reason);
 }

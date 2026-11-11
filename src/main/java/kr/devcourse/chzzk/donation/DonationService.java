@@ -40,6 +40,12 @@ public class DonationService {
     public record Confirmed(DonationKind kind, Long broadcastId, long amount, String message) {
     }
 
+    /** 결제창이 실패·취소로 돌아온 뒤의 주문 결과. 이미 확정된 주문이면 {@code status}가 CONFIRMED다. */
+    public record Ended(DonationStatus status, DonationKind kind, Long broadcastId, long amount, String message) {
+    }
+
+    static final String CANCELED_CODE = "PAY_PROCESS_CANCELED";
+
     private record Broadcast(String title, Member owner) {
     }
 
@@ -132,6 +138,28 @@ public class DonationService {
             throw rejected(current, "이미 처리가 끝난 후원 주문입니다.");
         }
         return confirmed(order);
+    }
+
+    /**
+     * 결제창 실패·취소 리다이렉트를 주문에 반영한다. 대기 상태일 때만 바꾸고(취소면 CANCELED, 그 밖은 FAILED),
+     * 이미 처리가 끝난 주문은 그대로 둔다(확정된 주문은 확정 유지).
+     *
+     * @throws DonationOrderNotFoundException 없는 주문
+     */
+    public Ended recordFailure(String orderId, String code, String message) {
+        DonationOrder order = orders.findWithDonor(orderId).orElseThrow(DonationOrderNotFoundException::new);
+        if (order.getStatus() == DonationStatus.PENDING) {
+            String reason = "[" + (code == null ? "" : code) + "] " + (message == null ? "" : message);
+            reason = reason.length() > 300 ? reason.substring(0, 300) : reason;
+            if (CANCELED_CODE.equals(code)) {
+                orders.cancelIfPending(orderId, reason);
+            } else {
+                orders.failIfPending(orderId, reason);
+            }
+            order = orders.findWithDonor(orderId).orElseThrow(DonationOrderNotFoundException::new);
+        }
+        return new Ended(order.getStatus(), order.getKind(), order.getBroadcastId(), order.getAmount(),
+                order.getMessage());
     }
 
     /** 방송의 확정된 후원을 최신 순으로 돌려준다. */
