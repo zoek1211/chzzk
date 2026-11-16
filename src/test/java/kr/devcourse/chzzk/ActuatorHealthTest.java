@@ -42,4 +42,11 @@ class ActuatorHealthTest {
         assertThat(anonymous.get("/actuator/beans").statusCode()).isEqualTo(404);
         assertThat(anonymous.get("/actuator/info").statusCode()).isEqualTo(404);
     }
+
+    @Test
+    void 단독_모드에서는_인스턴스_이름_헤더를_붙이지_않는다() throws Exception {
+        TestLogin.Http anonymous = TestLogin.Http.anonymous(port);
+
+        assertThat(anonymous.get("/broadcasts").headers().firstValue("X-Chzzk-Instance")).isEmpty();
+    }
 }

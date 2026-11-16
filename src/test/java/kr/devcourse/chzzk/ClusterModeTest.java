@@ -23,6 +23,19 @@ class ClusterModeTest {
     Path dataDir;
 
     @Test
+    void 응답마다_처리한_인스턴스_이름을_헤더로_알린다() throws Exception {
+        try (var cluster = ClusterHarness.newCluster(dataDir)) {
+            var a = cluster.start("A");
+            var b = cluster.start("B");
+
+            assertThat(a.anonymous().get("/broadcasts").headers().firstValue("X-Chzzk-Instance"))
+                    .hasValueSatisfying(v -> assertThat(v).startsWith(a.name() + "-"));
+            assertThat(b.anonymous().get("/broadcasts").headers().firstValue("X-Chzzk-Instance"))
+                    .hasValueSatisfying(v -> assertThat(v).startsWith(b.name() + "-"));
+        }
+    }
+
+    @Test
     void A에서_로그인한_세션으로_B에서도_로그인_전용_화면이_열린다() throws Exception {
         try (var cluster = ClusterHarness.newCluster(dataDir)) {
             var a = cluster.start("A");
