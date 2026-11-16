@@ -1,4 +1,4 @@
-# 치지직 만들기 ① 녹화방송 · ② 휴대폰 라이브 방송 · ③ 인증·인가와 댓글 · ④ 도네이션
+# 치지직 만들기 ① 녹화방송 · ② 휴대폰 라이브 방송 · ③ 인증·인가와 댓글 · ④ 도네이션 · ⑤ 로컬 오토스케일
 
 | 단계 | 과제 | 태그 |
 | --- | --- | --- |
@@ -6,14 +6,16 @@
 | 2단계 | 치지직 만들기 ② 인증·인가 없는 휴대폰 라이브 송출 (1단계 기능 유지) | `step-2` |
 | 3단계 | 치지직 만들기 ③ 인증·인가와 댓글 (1·2단계 기능 유지) | `step-3` |
 | 4단계 | 치지직 만들기 ④ 도네이션: 토스페이먼츠 테스트 결제 (1~3단계 기능 유지) | `step-4` |
+| 5단계 | 치지직 만들기 ⑤ 로컬 오토스케일: kind 클러스터에서 여러 인스턴스와 HPA (1~4단계 기능 유지) | `step-5` |
 
-**녹화방송(다시보기)** 을 등록·시청하고(1단계), 휴대폰 카메라·마이크로 **라이브 방송** 을 송출해 다른 화면에서 실시간으로 시청하며(2단계), **회원가입·로그인** 한 회원이 자기 방송만 관리하고 방송마다 **댓글** 로 소통하고(3단계), 방송 소유자에게 토스페이먼츠 **테스트 결제** 로 **후원** 하는(4단계) 서비스입니다. 방송 목록·시청·댓글 읽기는 로그인 없이 공개입니다([공개 범위](#공개-범위)).
+**녹화방송(다시보기)** 을 등록·시청하고(1단계), 휴대폰 카메라·마이크로 **라이브 방송** 을 송출해 다른 화면에서 실시간으로 시청하며(2단계), **회원가입·로그인** 한 회원이 자기 방송만 관리하고 방송마다 **댓글** 로 소통하고(3단계), 방송 소유자에게 토스페이먼츠 **테스트 결제** 로 **후원** 하는(4단계) 서비스입니다. 같은 서버를 로컬 Kubernetes(kind)에서 **여러 인스턴스** 로 띄우고, 부하에 따라 인스턴스 수가 자동으로 늘고 줄어도 로그인·방송·댓글·후원·라이브가 유지됩니다(5단계). 방송 목록·시청·댓글 읽기는 로그인 없이 공개입니다([공개 범위](#공개-범위)).
 
 - Java 25 이상, Spring Boot 4.1, Spring MVC + Thymeleaf, Spring Data JPA, Spring WebSocket, Spring Security(세션 폼 로그인·CSRF)
 - 저장소: 파일 기반 H2 DB(회원·녹화방송·라이브 방송·댓글·후원 주문) + 로컬 디스크(업로드 영상)
 - 라이브 영상 전달: WebRTC P2P (서버는 WebSocket 시그널링만 중계) — 선택 이유는 [ADR 0001](docs/adr/0001-webrtc-p2p-live.md)
 - 라이브 권한: 송출 키 대신 로그인 세션의 소유자 검사 — 선택 이유는 [ADR 0002](docs/adr/0002-live-owner-session-replaces-broadcast-key.md)
 - 후원: 토스페이먼츠 결제창(테스트 키) + 서버의 승인·확인 — 선택 이유는 [ADR 0003](docs/adr/0003-toss-test-payment-with-server-confirmation.md)
+- 오토스케일(5단계): Docker 이미지 + kind + Kubernetes HPA(CPU), 공용 저장소는 Postgres·Redis(세션·라이브 방)·공유 볼륨(영상) — 선택 이유는 [ADR 0004](docs/adr/0004-cluster-mode-with-shared-stores-and-redis-relay.md). 프로필 없이 실행하면 위 H2·로컬 디스크 구성 그대로입니다
 
 용어는 [GLOSSARY.md](GLOSSARY.md)에 정리했습니다.
 
@@ -39,6 +41,29 @@ java -jar build/libs/chzzk-0.0.1-SNAPSHOT.jar
 ```bash
 ./gradlew test
 ```
+
+### 클러스터 실행 (5단계: 여러 인스턴스와 오토스케일)
+
+필요한 것: Docker(Docker Desktop 등, 메모리 4GB 이상 권장), [kind](https://kind.sigs.k8s.io), kubectl. JDK는 필요 없습니다(이미지 안에서 빌드).
+
+```bash
+# 1. kind 클러스터 생성 → 이미지 빌드·로드 → Secret 생성 → Postgres·Redis·앱·metrics-server·HPA 배포
+scripts/cluster-up.sh
+
+# 2. 인스턴스 수 관찰 (다른 터미널)
+kubectl --context kind-chzzk get hpa,pods -w
+
+# 3. 부하 걸기 (k6 Job, 약 5분 30초)
+scripts/load.sh
+
+# 4. 스케일이 바뀌는 동안 로그인·방송 목록·댓글이 유지되는지 확인 (다른 터미널, Ctrl+C로 종료)
+scripts/check-state.sh
+
+# 5. 정리 (클러스터 삭제)
+scripts/cluster-down.sh
+```
+
+배포가 끝나면 <http://localhost:8080> 으로 접속합니다(호스트 8080 → NodePort 30080 → 앱 파드들). 컨테이너 이미지만 만들려면 `docker build -t chzzk:local .` 입니다. 이미지를 프로필 없이 실행(`docker run -p 8080:8080 chzzk:local`)하면 단독 모드로 뜹니다. 확인 절차와 실제 결과는 [5단계 직접 확인 절차](#5단계-로컬-오토스케일-1)에 있습니다.
 
 > 주의: 컴퓨터의 `localhost` 에서는 HTTP로도 카메라가 열리지만, **휴대폰에서는 HTTPS 주소에서만** 카메라·마이크를 쓸 수 있습니다. 아래 [휴대폰 연결 방법](#휴대폰-연결-방법)을 보세요.
 
@@ -66,6 +91,20 @@ java -jar build/libs/chzzk-0.0.1-SNAPSHOT.jar
 | `TOSS_CONNECT_TIMEOUT` | `5s` | 토스 API 연결 제한 시간 |
 | `TOSS_READ_TIMEOUT` | `10s` | 토스 API 응답 읽기 제한 시간. 넘으면 일시 오류로 보고 결제를 조회해 다시 확인함 |
 
+클러스터 모드(5단계) 전용 변수입니다. `SPRING_PROFILES_ACTIVE=cluster` 일 때만 읽고, k8s 매니페스트([k8s/chzzk.yaml](k8s/chzzk.yaml))가 설정합니다. 직접 정할 필요는 없습니다.
+
+| 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `SPRING_PROFILES_ACTIVE` | (없음) | `cluster` 면 클러스터 모드(Postgres·Redis·공유 볼륨). 없으면 단독 모드(H2·메모리) |
+| `CHZZK_DB_URL` | `jdbc:postgresql://localhost:5432/chzzk` | Postgres 주소 (클러스터에서는 `jdbc:postgresql://postgres:5432/chzzk`) |
+| `CHZZK_DB_USERNAME` | `chzzk` | Postgres 사용자 |
+| `CHZZK_DB_PASSWORD` | (없음) | Postgres 비밀번호 (비밀 값. `scripts/cluster-up.sh` 가 무작위로 만들어 k8s Secret `chzzk-secrets` 에만 둠) |
+| `CHZZK_REDIS_HOST` | `redis` | Redis 호스트 (로그인 세션, 라이브 방 상태, 시그널링 중계) |
+| `CHZZK_REDIS_PORT` | `6379` | Redis 포트 |
+| `CHZZK_REDIS_PREFIX` | `chzzk:` | Redis 키·채널 접두어 (테스트 격리용) |
+| `CHZZK_INSTANCE_ID` | 파드 이름(`HOSTNAME`) | 인스턴스 이름. 시그널링 중계와 응답 헤더 `X-Chzzk-Instance` 에 쓰임 |
+| `CHZZK_DATA_DIR` | `/data` (이미지 기본값) | 모든 파드가 마운트하는 공유 볼륨. 업로드 영상은 `/data/videos` |
+
 예시:
 
 ```bash
@@ -85,6 +124,9 @@ CHZZK_SSL_KEY_STORE_PASSWORD=<비밀번호> ./gradlew bootRun
 
 # 후원(토스 테스트 결제) 켜기 (값은 본인 테스트 키로)
 TOSS_CLIENT_KEY=test_ck_<클라이언트키> TOSS_SECRET_KEY=test_sk_<시크릿키> ./gradlew bootRun
+
+# 클러스터에 토스 테스트 키 넣기 (Secret 에만 저장되고, 다시 실행할 때 비워 두면 기존 값을 유지)
+TOSS_CLIENT_KEY=test_ck_<클라이언트키> TOSS_SECRET_KEY=test_sk_<시크릿키> scripts/cluster-up.sh
 ```
 
 ### 토스페이먼츠 테스트 키 준비
@@ -115,6 +157,7 @@ TOSS_CLIENT_KEY=test_ck_<클라이언트키> TOSS_SECRET_KEY=test_sk_<시크릿�
 ### 2단계: 라이브 방송
 
 > 3단계에서 바뀐 점: 방송 시작·종료·송출은 로그인한 소유자만 할 수 있고 송출 키(`X-Broadcast-Key`, `{type:"auth"}`)는 폐지되었습니다. 표 아래 설명과 [3단계: 인증·인가와 댓글](#3단계-인증인가와-댓글)의 "송출 키 폐지"를 참고하세요.
+> 5단계에서 바뀐 점: 클러스터 모드에서는 방송자 연결이 끊겨도 바로 종료하지 않고 접속 유예 시간(`CHZZK_BROADCASTER_JOIN_TIMEOUT`) 안에 다시 접속하지 않을 때 종료하며, 서버가 시작될 때 라이브를 모두 종료하지도 않습니다. 방송자·시청자 화면은 연결이 끊기면 자동으로 다시 접속합니다. 단독 모드는 아래 그대로입니다. [5단계: 로컬 오토스케일](#5단계-로컬-오토스케일)을 보세요.
 
 | 기능 | 위치 |
 | --- | --- |
@@ -262,6 +305,56 @@ templates/fragments/donations.html  후원 영역(폼·합계·내역·결제창
 - `TossPaymentGatewayTest`: 토스 승인·조회·취소 요청의 주소·인증·본문, 오류 응답·네트워크 오류·읽기 시간 초과 변환
 - `DonationRestartPersistenceTest`: 재시작 후에도 확정된 후원·합계가 남고 대기 주문은 합계에 들어가지 않음
 
+### 5단계: 로컬 오토스케일
+
+서버를 컨테이너 이미지로 만들어 로컬 Kubernetes(kind)에 **여러 인스턴스** 로 띄우고, CPU 사용률을 보고 HPA가 인스턴스 수를 2~5개 사이에서 자동으로 늘리고 줄입니다. 인스턴스는 언제든 생기고 사라지므로, 사용자가 다시 봐야 하는 상태는 모두 인스턴스 밖 **공용 저장소** 에 둡니다(`cluster` 프로필 = **클러스터 모드**). 프로필 없이 실행하면(단독 모드) 1~4단계와 똑같이 H2·메모리로 혼자 동작합니다. 용어는 [GLOSSARY.md](GLOSSARY.md)(인스턴스, 공용 저장소, 클러스터 모드, 오토스케일, 방송자 접속 기록, 시그널링 중계), 선택 이유는 [ADR 0004](docs/adr/0004-cluster-mode-with-shared-stores-and-redis-relay.md)입니다. 클라우드 배포는 하지 않습니다.
+
+| 범위 | 위치 | 내용 |
+| --- | --- | --- |
+| **컨테이너 이미지 빌드** | [Dockerfile](Dockerfile), [.dockerignore](.dockerignore) | 멀티 스테이지: JDK 25로 `bootJar` → JRE 25로 실행. 비루트 사용자, `/data` 볼륨, 8080 포트 |
+| **여러 인스턴스 배포** | [k8s/chzzk.yaml](k8s/chzzk.yaml) (Deployment), [k8s/kind-config.yaml](k8s/kind-config.yaml), [scripts/cluster-up.sh](scripts/cluster-up.sh) | kind 단일 노드 클러스터에 앱 Deployment(평소 2개). CPU 요청 250m·상한 2, 메모리 512Mi~1Gi, `/actuator/health/liveness`·`readiness` 프로브, 종료 전 5초 대기(`preStop`)와 60초 종료 유예 |
+| **지표 기반 자동 조절 (최소·최대)** | [k8s/chzzk.yaml](k8s/chzzk.yaml) (HorizontalPodAutoscaler), [k8s/metrics-server.yaml](k8s/metrics-server.yaml) | `autoscaling/v2` HPA: **CPU 평균 사용률 50%** 기준, **최소 2 · 최대 5**, 축소 안정화 60초(부하가 멈추고 약 1분 뒤부터 줄어듦). 지표는 metrics-server(kind용 `--kubelet-insecure-tls`) |
+| **요청 분산** | [k8s/chzzk.yaml](k8s/chzzk.yaml) (Service `chzzk`, NodePort 30080) | 모든 앱 파드 앞의 Service가 HTTP와 WebSocket 요청을 나눠 보냄. 호스트 `localhost:8080` → NodePort 30080. 클러스터 모드 응답에는 처리한 인스턴스 이름이 `X-Chzzk-Instance` 헤더로 붙음(`InstanceHeaderFilter`) |
+| **공용 저장소: 회원·방송·댓글·후원** | [k8s/postgres.yaml](k8s/postgres.yaml), `application-cluster.properties` | Postgres 1개(PVC). 같은 JPA 엔티티를 그대로 씀 |
+| **공용 저장소: 로그인 세션** | `application-cluster.properties`, `build.gradle` (Spring Session Data Redis) | HTTP 세션을 Redis에 둬 어느 인스턴스로 가도 로그인이 유지됨. 단독 모드에서는 Redis 자동 설정을 끔(`application.properties` 의 `spring.autoconfigure.exclude`) |
+| **공용 저장소: 업로드 영상** | [k8s/chzzk.yaml](k8s/chzzk.yaml) (PVC `chzzk-data` → `/data`) | 모든 앱 파드가 같은 볼륨을 마운트. 영상 저장 코드는 그대로 |
+| **공용 저장소: 라이브 상태** | `live/RedisLiveRooms.java`, [k8s/redis.yaml](k8s/redis.yaml) | 방송 정보는 Postgres, 방 상태(방송자 접속 기록, 시청자 명단·정원)는 Redis, 다른 인스턴스에 붙은 상대에게는 Redis pub/sub으로 시그널링 메시지와 종료 알림을 전달. 아래 설명 참고 |
+| **부하 발생** | [load/k6-load.js](load/k6-load.js), [k8s/k6-job.yaml](k8s/k6-job.yaml), [scripts/load.sh](scripts/load.sh) | k6(`grafana/k6` 이미지)를 클러스터 안 Job으로 실행. 가상 사용자 100명, 1분 증가 → 4분 유지 → 30초 감소. 홈·방송 목록·녹화방송 상세·댓글 조회 |
+| **스케일 중 상태 유지 확인** | [scripts/check-state.sh](scripts/check-state.sh) | 확인용 회원으로 로그인해 방송·댓글을 만들고, 같은 세션으로 주기적으로 로그인 전용 화면·방송 목록·댓글을 조회해 응답 인스턴스와 함께 출력 |
+| **비밀 값** | [scripts/cluster-up.sh](scripts/cluster-up.sh) | DB 비밀번호는 배포할 때 `openssl rand` 로 만들어 Secret `chzzk-secrets` 에만 둠. 토스 키는 환경변수로 줄 때만 Secret에 넣음. 저장소에는 비밀 값이 없음 |
+
+**라이브가 여러 인스턴스에서 동작하는 방식 (클러스터 모드)**
+
+- 영상은 WebRTC P2P라 서버를 거치지 않습니다. 서버가 중계하는 것은 시그널링(offer·answer·candidate)뿐이므로, 방송자와 시청자가 서로 다른 인스턴스에 붙어도 Redis pub/sub으로 메시지를 전달하면 됩니다. 메시지 형식은 2단계와 같습니다.
+- **방송자 접속 기록**: 방송자 연결을 가진 인스턴스가 Redis 키(만료 6초)를 주기적으로 갱신합니다. 다른 인스턴스에 이미 방송자가 있으면 새 방송자 연결은 닫힙니다.
+- **시청 정원**: 시청자 명단(시청자 → 인스턴스)을 Redis에 두고 Lua 스크립트로 원자적으로 검사합니다. 살아 있지 않은 인스턴스의 시청자는 정원에서 빠집니다.
+- **종료 판정**: 방송자 연결이 끊겨도 바로 종료하지 않습니다. 방송자 접속 기록이 접속 유예 시간(기본 30초)보다 오래 없는 라이브만, Redis 시각 기준으로 한 인스턴스가 원자적으로 판정해 종료합니다. 종료는 방송 중인 라이브에만 한 번 일어나고(조건부 갱신), 종료 알림은 모든 인스턴스로 퍼져 각자 자기 연결에 `ended` 를 보냅니다.
+- **인스턴스가 사라질 때**: 정상 종료하는 인스턴스는 자기 연결을 닫기 코드 `1012`(재시작)로 닫고 방송은 종료하지 않습니다. 방송자·시청자 화면은 `ended` 없이 끊기면 `GET /live/{id}/status`(`{"onAir": true|false}`)로 방송 여부를 확인한 뒤 백오프로 다시 접속합니다(최대 20번). 방송자 화면은 이미 연결된 시청자 피어를 유지하고, 시청자 화면은 새로 협상합니다(잠깐 끊길 수 있음).
+- 새 인스턴스가 시작돼도 진행 중인 라이브를 종료하지 않습니다(단독 모드는 2단계처럼 시작 시 모두 종료).
+
+**알려진 한계**: 공유 볼륨은 kind 단일 노드의 `ReadWriteOnce` 볼륨이라 노드가 여러 개인 실제 클러스터에서는 `ReadWriteMany` 스토리지나 오브젝트 스토리지가 필요합니다. Postgres·Redis는 한 개씩이라 이중화하지 않습니다. 스키마는 `ddl-auto=update` 로 맞추므로 처음 배포 때는 `cluster-up.sh` 가 DB 준비를 기다린 뒤 앱을 띄웁니다.
+
+**코드 구조 (5단계 추가·변경)**
+
+```
+live/LiveRooms.java             라이브 방 경계: 방송자·시청자 입장, 메시지 전달, 종료 알림. SignalingHandler는 이 인터페이스와 자기 WebSocket 연결만 안다
+live/MemoryLiveRooms.java       단독 모드 구현 (2~4단계 동작 그대로)
+live/RedisLiveRooms.java        클러스터 모드 구현 (방송자 접속 기록, 시청자 명단·정원 Lua, pub/sub 중계, 주기 종료 판정, 정상 종료 시 1012)
+live/LiveBroadcastController.java  GET /live/{id}/status 추가 (화면 재접속 판단용, 공개)
+live/LiveStartupCleanup.java    방이 인스턴스보다 오래 사는 구현(클러스터)이면 시작 시 전체 종료를 하지 않음
+InstanceHeaderFilter.java       클러스터 모드 응답에 X-Chzzk-Instance 헤더
+application-cluster.properties  Postgres·Redis·세션·인스턴스 이름 설정
+templates/live/new.html, watch.html  연결이 끊기면 자동 재접속
+```
+
+**자동 테스트** (Testcontainers로 Postgres·Redis를 띄우고 서버 인스턴스 2~3개를 같은 저장소로 올립니다. Docker가 없으면 이 테스트만 건너뜁니다. CI(GitHub Actions)에서는 돌아갑니다)
+
+- `ClusterModeTest`: A에서 로그인한 세션으로 B에서 로그인 전용 화면, A에서 만든 방송·댓글이 B에 보이고 A로 올린 영상을 B에서 구간 재생, 라이브 중 새 인스턴스가 떠도 방송 유지, 응답마다 인스턴스 이름 헤더
+- `ClusterLiveTest`: 방송자 A·시청자 B 사이 offer·answer·candidate 전달, 늦게 붙은 방송자가 다른 인스턴스의 시청자를 받음, 다른 인스턴스의 중복 방송자 거절, A·B에 걸친 정원 초과 `full`, A에서 종료하면 B의 시청자가 `ended`, 시청자 인스턴스를 닫아도 방송 유지·재접속 코드, 방송자 인스턴스를 닫고 유예 안에 다른 인스턴스로 재접속하면 유지, 유예를 넘기면 종료, 접속 기록 키가 만료돼도 연결이 있으면 되살림, 중복 방송자 정리
+- `ActuatorHealthTest`: `/actuator/health`(liveness·readiness)만 공개, 단독 모드에는 인스턴스 헤더 없음
+- `LiveEndWebTest`: `GET /live/{id}/status` (방송 중·종료·없음 `404`)
+- 단독 모드의 1~4단계 테스트는 모두 그대로 통과합니다(라이브 방 경계를 옮긴 리팩터링의 안전망)
+
 ### 공개 범위
 
 시청·목록 조회는 로그인 없이 공개이고, 쓰기·관리는 서버가 로그인·소유자·작성자 여부를 검사합니다. (4단계: 방송별 후원 합계·내역은 공개이고, 후원 주문 생성은 로그인한 회원만 합니다. 승인 확인 경로 `GET /donations/success`·`fail` 과 웹훅은 로그인이 아니라 주문과 결제사 확인으로 판단합니다. 자세한 것은 4단계 표.)
@@ -357,6 +450,7 @@ docs/adr/0002-live-owner-session-replaces-broadcast-key.md  송출 키 폐지, �
   - `CommentRestartPersistenceTest`: 재시작 후 댓글·회원 유지
   - (보조) `TestLogin`, `MemberSessions`, `TestWeb`, `LivePages`, `SignalingClient`: 테스트용 로그인·CSRF·WebSocket 클라이언트
 - 4단계: 위 [4단계: 도네이션](#4단계-도네이션)의 "자동 테스트" 목록 (`Donation*Test`, `TossPaymentGatewayTest`, 보조 `FakePaymentGateway`)
+- 5단계: 위 [5단계: 로컬 오토스케일](#5단계-로컬-오토스케일)의 "자동 테스트" 목록 (`ClusterModeTest`, `ClusterLiveTest`, `ActuatorHealthTest`, 보조 `ClusterHarness`)
 
 ## 휴대폰 연결 방법
 
@@ -419,7 +513,73 @@ CHZZK_SSL_KEY_STORE_PASSWORD=<keytool에서 정한 비밀번호> \
 
 ## 직접 확인 절차
 
-1단계·2단계 절차는 당시 그대로 두었습니다. 4단계(도네이션)는 맨 위에 있고 토스 테스트 키가 필요합니다. 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하므로, 해당 절차 전에 헤더의 **회원가입** 으로 가입(자동 로그인)하세요. 1단계 curl 예시는 로그인 쿠키와 CSRF 토큰이 없으면 `302 /login` 또는 `403` 이 돌아오고, 로그인 포함 요청은 [3단계 curl 예시](#3단계-인증인가와-댓글-1)에 있습니다.
+1단계·2단계 절차는 당시 그대로 두었습니다. 최신 단계가 맨 위입니다. 5단계(로컬 오토스케일)는 Docker·kind·kubectl이, 4단계(도네이션)는 토스 테스트 키가 필요합니다. 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하므로, 해당 절차 전에 헤더의 **회원가입** 으로 가입(자동 로그인)하세요. 1단계 curl 예시는 로그인 쿠키와 CSRF 토큰이 없으면 `302 /login` 또는 `403` 이 돌아오고, 로그인 포함 요청은 [3단계 curl 예시](#3단계-인증인가와-댓글-1)에 있습니다.
+
+### 5단계: 로컬 오토스케일
+
+부하를 걸면 인스턴스 수가 늘고, 부하를 멈추면 다시 줄어드는지, 그동안 로그인 상태·방송 목록·댓글이 그대로인지 확인합니다. **아래 결과는 2026-11-16 이 저장소의 스크립트로 실제 kind 클러스터에서 실행한 출력입니다**(전체 기록: [docs/scale-check/](docs/scale-check/)). 실행 환경: macOS, Docker Desktop(CPU 8개, 메모리 4GB), kind 단일 노드.
+
+준비
+
+1. Docker를 켜고 kind·kubectl을 설치합니다(예: `brew install kind kubectl`).
+2. `scripts/cluster-up.sh` 로 배포합니다. 끝나면 `kubectl --context kind-chzzk get pods` 에 `chzzk-…` 파드 2개, `postgres`, `redis` 가 `Running` 입니다.
+3. 브라우저로 <http://localhost:8080> 에 접속해 가입·로그인하고 방송·댓글이 보이는지 봅니다. 응답 헤더 `X-Chzzk-Instance` 로 어느 인스턴스가 답했는지 볼 수 있습니다.
+
+```bash
+for i in 1 2 3 4 5 6; do curl -s -o /dev/null -D - http://localhost:8080/broadcasts | grep -i x-chzzk-instance; done
+# 두 파드 이름이 섞여 나오면 요청이 나뉘고 있는 것
+```
+
+스케일 아웃·인 확인
+
+1. 터미널 A: `kubectl --context kind-chzzk get hpa,pods -w` (또는 15초마다 `kubectl --context kind-chzzk get hpa chzzk`)
+2. 터미널 B: `scripts/check-state.sh` (확인용 회원을 만들어 로그인하고 방송·댓글을 하나 만든 뒤, 같은 세션으로 10초마다 확인)
+3. 터미널 C: `scripts/load.sh` (k6 Job, 약 5분 30초)
+4. 터미널 A에서 `REPLICAS` 가 2 → 3 → 5 로 늘었다가, 부하가 끝나고 약 1분 뒤부터 4 → 3 → 2 로 줄어드는지 봅니다.
+5. 터미널 B의 모든 줄이 `로그인=유지 방송목록=유지 댓글=유지` 이고, `응답 인스턴스` 가 여러 파드로 바뀌는지 봅니다.
+6. 끝나면 `scripts/cluster-down.sh` 로 정리합니다.
+
+실제 결과: 인스턴스 수 변화 (15초 간격 기록 64줄 중 변화가 보이는 줄. `kubectl get hpa chzzk`, 열: 시각 · 이름 · 대상 · CPU 사용률/목표 · 최소 · 최대 · **현재 인스턴스 수** · 나이)
+
+```
+23:22:20  chzzk   Deployment/chzzk   cpu: 42%/50%   2     5     2     47m
+23:22:36  chzzk   Deployment/chzzk   cpu: 58%/50%   2     5     2     47m
+23:23:19  chzzk   Deployment/chzzk   cpu: 76%/50%   2     5     3     48m
+23:26:11  chzzk   Deployment/chzzk   cpu: 362%/50%   2     5     3     51m
+23:26:26  chzzk   Deployment/chzzk   cpu: 357%/50%   2     5     5     51m
+23:26:58  chzzk   Deployment/chzzk   cpu: 432%/50%   2     5     5     52m
+23:29:37  chzzk   Deployment/chzzk   cpu: 30%/50%   2     5     5     54m
+23:31:56  chzzk   Deployment/chzzk   cpu: 22%/50%   2     5     5     57m
+23:32:11  chzzk   Deployment/chzzk   cpu: 17%/50%   2     5     4     57m
+23:32:42  chzzk   Deployment/chzzk   cpu: 14%/50%   2     5     3     57m
+23:33:13  chzzk   Deployment/chzzk   cpu: 6%/50%   2     5     2     58m
+23:39:36  chzzk   Deployment/chzzk   cpu: 7%/50%   2     5     2     64m
+```
+
+- 부하 시작 직후 CPU가 목표 50%를 넘어 **2 → 3**, 부하 유지 중 **3 → 5**(최대)로 늘었습니다.
+- 부하가 끝난 뒤(23:28 무렵) CPU가 내려가고, 축소 안정화 60초가 지난 뒤 **5 → 4 → 3 → 2**(최소)로 줄었습니다. 그 뒤로는 2개를 유지했습니다.
+- 중간의 `<unknown>` 은 새 파드가 막 떠서 metrics-server가 아직 지표를 모으지 못한 구간입니다.
+
+실제 결과: 스케일 중 상태 유지 (`scripts/check-state.sh`, 10초 간격 91번 중 일부)
+
+```
+확인용 회원 check1794838940, 방송 /broadcasts/2, 댓글 1개를 만들었습니다. 10초마다 확인합니다.
+23:22:22  응답 인스턴스=chzzk-58c7bf9969-x6pbp     로그인=유지 방송목록=유지 댓글=유지
+23:26:05  응답 인스턴스=chzzk-58c7bf9969-x6pbp     로그인=유지 방송목록=유지 댓글=유지
+23:26:15  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
+23:26:30  응답 인스턴스=chzzk-58c7bf9969-sj7n7     로그인=유지 방송목록=유지 댓글=유지
+23:26:41  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
+23:34:41  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
+```
+
+- 91번 모두 `로그인=유지 방송목록=유지 댓글=유지` 였고, 응답한 인스턴스는 5개 파드에 걸쳐 바뀌었습니다(전체: [docs/scale-check/2026-11-16-state.log](docs/scale-check/2026-11-16-state.log)).
+- k6 결과: 요청 597,305건, 실패 0%, 체크 100% 통과, p95 응답 106ms ([docs/scale-check/2026-11-16-k6-summary.txt](docs/scale-check/2026-11-16-k6-summary.txt)).
+
+라이브 확인 (클러스터 모드)
+
+1. 브라우저에서 라이브를 시작만 하고 방송자 화면을 열지 않으면, 접속 유예 30초 뒤 방송이 종료되고 열려 있던 시청 화면에 새로고침 없이 "방송이 종료되었습니다." 가 뜹니다(종료 판정과 종료 알림이 인스턴스 사이에 전달됨. 위 날짜에 브라우저로 확인).
+2. 휴대폰으로 송출하려면 [휴대폰 연결 방법](#휴대폰-연결-방법)처럼 `cloudflared tunnel --url http://localhost:8080` 으로 HTTPS 주소를 만들어 송출 화면을 엽니다. 시청 화면을 다른 기기에서 열면 방송자와 시청자가 서로 다른 인스턴스에 붙어도 영상이 보입니다.
+3. 방송 중에 `kubectl --context kind-chzzk delete pod <앱 파드 하나>` 로 인스턴스를 하나 없애도 방송은 종료되지 않고, 화면은 다시 접속합니다(방송자 연결이 끊긴 채 30초가 지나면 종료). 실제 휴대폰 송출은 이 문서를 쓰며 실행하지 않았고, 같은 동작을 `ClusterLiveTest` 가 확인합니다.
 
 ### 4단계: 도네이션
 

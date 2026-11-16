@@ -1,17 +1,15 @@
 package kr.devcourse.chzzk.live;
 
-import jakarta.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
-import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.socket.CloseStatus;
@@ -24,7 +22,8 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * 시그널링 중계. 라이브 방송마다 방(room: 방송자 1명 + 시청자 여러 명)을 메모리에 두고
+ * 시그널링 중계. 이 인스턴스에 붙은 WebSocket 연결을 쥐고, 라이브 방송마다 방(room: 방송자 1명 + 시청자 여러 명)의 상태와
+ * 상대에게 메시지를 전하는 일은 {@link LiveRooms}에 맡긴다(단독 모드는 메모리, 클러스터 모드는 Redis).
  * offer/answer/candidate를 맞는 상대에게만 전달한다. 미디어는 다루지 않는다.
  *
  * <pre>
@@ -56,104 +55,126 @@ class SignalingHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(SignalingHandler.class);
     private static final Set<String> FROM_BROADCASTER = Set.of("offer", "candidate");
     private static final Set<String> FROM_VIEWER = Set.of("answer", "candidate");
+    /** 인스턴스가 사라지니 다시 접속하라는 닫기 코드(1012, Service Restart). 방송은 끝나지 않았다. */
+    static final CloseStatus RECONNECT = CloseStatus.SERVICE_RESTARTED.withReason("서버 교체 중, 다시 접속해 주세요");
 
     private final ObjectMapper json;
-    private final LiveBroadcastService live;
-    private final int viewerCapacity;
-    private final Duration broadcasterJoinTimeout;
-    private final Map<Long, Room> rooms = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(task -> {
-        Thread thread = new Thread(task, "live-join-timeout");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final LiveRooms rooms;
+    /** 이 인스턴스의 모든 연결(방송자·시청자), 세션 id로. */
+    private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    /** 이 인스턴스에서 방송자로 받아들여진 연결의 세션 id. */
+    private final Set<String> broadcasters = ConcurrentHashMap.newKeySet();
 
-    SignalingHandler(
-            ObjectMapper json,
-            LiveBroadcastService live,
-            @Value("${chzzk.live.viewer-capacity:5}") int viewerCapacity,
-            @Value("${chzzk.live.broadcaster-join-timeout:30s}") Duration broadcasterJoinTimeout) {
+    SignalingHandler(ObjectMapper json, LiveRooms rooms) {
         this.json = json;
-        this.live = live;
-        this.viewerCapacity = viewerCapacity;
-        this.broadcasterJoinTimeout = broadcasterJoinTimeout;
+        this.rooms = rooms;
     }
 
-    @PreDestroy
-    void shutdown() {
-        scheduler.shutdownNow();
+    /** 빈이 다 만들어진 뒤에 방 구현에 연결 창구를 넘긴다(생성자에서 this 를 내보내지 않는다). */
+    @PostConstruct
+    void attachToRooms() {
+        rooms.attach(new OwnConnections());
     }
 
-    /** 라이브가 시작되면, 유예 시간 안에 방송자가 접속하지 않을 때 종료로 바꿀 검사를 예약한다. */
+    /** 이 인스턴스의 연결에 닿는 창구. 방 구현이 다른 인스턴스에서 온 메시지를 여기로 넘긴다. */
+    private final class OwnConnections implements LiveRooms.Connections {
+
+        @Override
+        public void deliver(String sessionId, ObjectNode message) {
+            WebSocketSession session = sessions.get(sessionId);
+            if (session != null) {
+                send(session, message);
+            }
+        }
+
+        @Override
+        public void endConnectionsOf(Long liveId) {
+            ObjectNode ended = message("ended");
+            for (WebSocketSession session : List.copyOf(sessions.values())) {
+                if (Peer.of(session).liveId().equals(liveId)) {
+                    sessions.remove(session.getId());
+                    broadcasters.remove(session.getId());
+                    send(session, ended);
+                    close(session, CloseStatus.NORMAL.withReason("방송 종료"));
+                }
+            }
+        }
+
+        @Override
+        public void closeDuplicateBroadcaster(String sessionId) {
+            WebSocketSession session = sessions.get(sessionId);
+            if (session != null) {
+                broadcasters.remove(sessionId); // 접속 기록은 다른 인스턴스 것이므로 닫힐 때 건드리지 않는다.
+                close(session, CloseStatus.POLICY_VIOLATION.withReason("이미 방송자가 접속해 있습니다"));
+            }
+        }
+    }
+
+    /** 라이브가 시작되면 방송자 접속 유예를 재기 시작한다. */
     @TransactionalEventListener(fallbackExecution = true)
     void onLiveStarted(LiveStarted started) {
-        scheduler.schedule(() -> endIfNoBroadcaster(started.liveId()),
-                broadcasterJoinTimeout.toMillis(), TimeUnit.MILLISECONDS);
-    }
-
-    private void endIfNoBroadcaster(Long liveId) {
-        try {
-            Room room = rooms.get(liveId);
-            if (room == null || room.broadcaster == null) {
-                live.endByDisconnect(liveId);
-            }
-        } catch (RuntimeException e) {
-            log.warn("방송자 접속 유예 시간 검사에 실패했습니다", e);
-        }
+        rooms.liveStarted(started.liveId());
     }
 
     /** 라이브 방송이 종료되면(종료 요청·연결 끊김·접속 유예 초과 공통) 시청자 모두에게 알리고 연결을 닫는다. */
     @TransactionalEventListener(fallbackExecution = true)
     void onLiveEnded(LiveEnded ended) {
-        Room room = rooms.remove(ended.liveId());
-        if (room == null) {
-            return;
-        }
-        ObjectNode message = message("ended");
-        WebSocketSession broadcaster = room.broadcaster;
-        if (broadcaster != null) { // 다른 기기에서 종료한 경우 방송자 화면도 정리하게 알린다.
-            send(broadcaster, message);
-            close(broadcaster, CloseStatus.NORMAL.withReason("방송 종료"));
-        }
-        room.viewers.values().forEach(viewer -> {
-            send(viewer, message);
-            close(viewer, CloseStatus.NORMAL.withReason("방송 종료"));
-        });
+        rooms.liveEnded(ended.liveId());
     }
 
-    /** 라이브 방송 하나의 방. 방송자는 한 명뿐이다. */
-    private static final class Room {
-        volatile WebSocketSession broadcaster;
-        final Map<String, WebSocketSession> viewers = new ConcurrentHashMap<>();
-
-        boolean isBroadcaster(WebSocketSession session) {
-            WebSocketSession current = broadcaster;
-            return current != null && current.getId().equals(session.getId());
+    /**
+     * 클러스터 모드에서 인스턴스가 정상 종료할 때(웹 서버가 내려가기 전) 자기 연결을 "재접속하라"로 닫는다. 방송은 종료하지 않는다.
+     * 단독 모드는 기존대로 서버가 연결을 닫을 때의 처리에 맡긴다.
+     */
+    @EventListener
+    void onContextClosed(ContextClosedEvent event) {
+        if (!rooms.livesOutliveInstance()) {
+            return;
         }
+        for (WebSocketSession session : List.copyOf(sessions.values())) {
+            try {
+                release(session);
+            } catch (RuntimeException e) {
+                log.debug("종료 중 연결 정리에 실패했습니다", e);
+            }
+            close(session, RECONNECT);
+        }
+        rooms.stopping();
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession raw) {
         Peer peer = Peer.of(raw);
+        WebSocketSession session = new ConcurrentWebSocketSessionDecorator(raw, 5000, 512 * 1024);
+        sessions.put(raw.getId(), session);
         if (peer.role() == Role.VIEWER) {
-            admitViewer(raw, peer.liveId());
+            admitViewer(raw, session, peer.liveId());
         } else {
-            admitBroadcaster(raw, peer.liveId());
+            admitBroadcaster(raw, session, peer.liveId());
         }
     }
 
-    private void admitViewer(WebSocketSession raw, Long liveId) {
-        WebSocketSession session = new ConcurrentWebSocketSessionDecorator(raw, 5000, 512 * 1024);
-        Room room = rooms.computeIfAbsent(liveId, id -> new Room());
-        synchronized (room) {
-            if (room.viewers.size() >= viewerCapacity) {
-                send(session, message("full"));
-                close(session, CloseStatus.POLICY_VIOLATION.withReason("시청 정원이 가득 찼습니다"));
-                return;
-            }
-            room.viewers.put(raw.getId(), session);
+    private void admitViewer(WebSocketSession raw, WebSocketSession session, Long liveId) {
+        if (!rooms.admitViewer(liveId, raw.getId())) {
+            sessions.remove(raw.getId());
+            send(session, message("full"));
+            close(session, CloseStatus.POLICY_VIOLATION.withReason("시청 정원이 가득 찼습니다"));
+            return;
         }
-        sendToBroadcaster(room, event("viewer-joined", raw.getId()));
+        rooms.toBroadcaster(liveId, event("viewer-joined", raw.getId()));
+    }
+
+    /** 핸드셰이크가 소유자 세션임을 확인했으므로, 아직 방송자가 없으면 방송자로 들인다. */
+    private void admitBroadcaster(WebSocketSession raw, WebSocketSession session, Long liveId) {
+        if (!rooms.admitBroadcaster(liveId, raw.getId())) {
+            sessions.remove(raw.getId());
+            close(raw, CloseStatus.POLICY_VIOLATION.withReason("이미 방송자가 접속해 있습니다"));
+            return;
+        }
+        broadcasters.add(raw.getId());
+        send(session, message("authenticated"));
+        // 방송자보다 먼저 들어와 있던 시청자도 알려 준다.
+        rooms.viewerIds(liveId).forEach(viewerId -> send(session, event("viewer-joined", viewerId)));
     }
 
     @Override
@@ -175,60 +196,41 @@ class SignalingHandler extends TextWebSocketHandler {
     }
 
     private void handleFromBroadcaster(WebSocketSession raw, Long liveId, String type, ObjectNode body) {
-        Room room = rooms.get(liveId);
-        if (room == null || !room.isBroadcaster(raw)) {
+        if (!broadcasters.contains(raw.getId())) {
             return; // 방송자로 받아들여지지 않은 연결(이미 방송자가 있어 닫히는 중)의 메시지는 무시한다.
         }
         if (!FROM_BROADCASTER.contains(type) || !body.hasNonNull("viewerId")) {
             return;
         }
-        WebSocketSession viewer = room.viewers.get(body.get("viewerId").asString());
-        if (viewer != null) {
-            body.remove("viewerId");
-            send(viewer, body);
-        }
+        String viewerId = body.get("viewerId").asString();
+        body.remove("viewerId");
+        rooms.toViewer(liveId, viewerId, body);
     }
 
     private void handleFromViewer(WebSocketSession raw, Long liveId, String type, ObjectNode body) {
-        Room room = rooms.get(liveId);
-        if (room != null && FROM_VIEWER.contains(type)) {
+        if (FROM_VIEWER.contains(type)) {
             body.put("viewerId", raw.getId());
-            sendToBroadcaster(room, body);
+            rooms.toBroadcaster(liveId, body);
         }
-    }
-
-    /** 핸드셰이크가 소유자 세션임을 확인했으므로, 아직 방송자가 없으면 방송자로 들인다. */
-    private void admitBroadcaster(WebSocketSession raw, Long liveId) {
-        WebSocketSession session = new ConcurrentWebSocketSessionDecorator(raw, 5000, 512 * 1024);
-        Room room = rooms.computeIfAbsent(liveId, id -> new Room());
-        synchronized (room) {
-            if (room.broadcaster != null) {
-                close(raw, CloseStatus.POLICY_VIOLATION.withReason("이미 방송자가 접속해 있습니다"));
-                return;
-            }
-            room.broadcaster = session;
-        }
-        send(session, message("authenticated"));
-        // 방송자보다 먼저 들어와 있던 시청자도 알려 준다.
-        room.viewers.keySet().forEach(viewerId -> send(session, event("viewer-joined", viewerId)));
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession raw, CloseStatus status) {
-        Peer peer = Peer.of(raw);
-        Room room = rooms.get(peer.liveId());
-        if (room == null) {
+        release(raw);
+    }
+
+    /** 이 인스턴스가 쥔 연결 하나를 정리하고 방 상태에서 뺀다. 이미 정리된 연결이면 아무 일도 없다. */
+    private void release(WebSocketSession session) {
+        if (sessions.remove(session.getId()) == null) {
             return;
         }
+        Peer peer = Peer.of(session);
         if (peer.role() == Role.BROADCASTER) {
-            synchronized (room) {
-                if (room.isBroadcaster(raw)) {
-                    room.broadcaster = null;
-                    live.endByDisconnect(peer.liveId());
-                }
+            if (broadcasters.remove(session.getId())) {
+                rooms.broadcasterGone(peer.liveId(), session.getId());
             }
-        } else if (room.viewers.remove(raw.getId()) != null) {
-            sendToBroadcaster(room, event("viewer-left", raw.getId()));
+        } else if (rooms.viewerGone(peer.liveId(), session.getId())) {
+            rooms.toBroadcaster(peer.liveId(), event("viewer-left", session.getId()));
         }
     }
 
@@ -238,13 +240,6 @@ class SignalingHandler extends TextWebSocketHandler {
 
     private ObjectNode event(String type, String viewerId) {
         return message(type).put("viewerId", viewerId);
-    }
-
-    private void sendToBroadcaster(Room room, ObjectNode message) {
-        WebSocketSession broadcaster = room.broadcaster;
-        if (broadcaster != null) {
-            send(broadcaster, message);
-        }
     }
 
     private void send(WebSocketSession session, ObjectNode message) {

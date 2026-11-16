@@ -39,6 +39,13 @@ public class LiveBroadcastController {
         return "live/watch";
     }
 
+    /** 방송 중인지 알려 주는 공개 상태. 화면 마크업과 무관하게 재접속하는 브라우저 스크립트가 쓴다. 없는 라이브는 404. */
+    @GetMapping("/live/{id}/status")
+    @ResponseBody
+    public Map<String, Boolean> status(@PathVariable Long id) {
+        return Map.of("onAir", live.find(id).orElseThrow(LiveNotFoundException::new).isOnAir());
+    }
+
     @PostMapping("/live")
     @ResponseBody
     public LiveBroadcastService.StartedLive start(@RequestBody StartRequest request,

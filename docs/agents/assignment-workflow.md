@@ -8,7 +8,8 @@
 | 2 | `https://classroom.codemit.kr/classes/6/problems/62/submit` | `step-2` |
 | 3 | `https://classroom.codemit.kr/classes/6/problems/63/submit` | `step-3` |
 | 4 | `https://classroom.codemit.kr/classes/6/problems/64/submit` | `step-4` |
-| N | 앞 단계 번호 + 1 (페이지 제목으로 확인) | `step-N` |
+| 5 | `https://classroom.codemit.kr/classes/6/problems/69/submit` | `step-5` |
+| N | 페이지 번호가 연속하지 않을 수 있음(5단계는 69). 문제 목록에서 제목으로 찾기 | `step-N` |
 
 ## 단계
 
