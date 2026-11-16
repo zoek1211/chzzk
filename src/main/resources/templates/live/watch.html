@@ -58,29 +58,21 @@
     var player = document.getElementById('player');
     var status = document.getElementById('status');
     var scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var ws = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId + '/viewer');
-    var pc = new RTCPeerConnection({ iceServers: iceServers });
+    var unmuteButton = document.getElementById('unmute-button');
+    var ws = null;
+    var pc = null;
+    var retired = [];
+    var attempts = 0;
+    var retryTimer = null;
+    // 방송이 끝났거나 정원이 찼으면 더는 연결이 끊긴 것으로 보지 않는다.
+    var settled = false;
 
     function send(payload) {
-        ws.send(JSON.stringify(payload));
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
+        }
     }
 
-    pc.onicecandidate = function (event) {
-        if (event.candidate) {
-            send({ type: 'candidate', candidate: event.candidate });
-        }
-    };
-    pc.ontrack = function (event) {
-        player.srcObject = event.streams[0];
-        status.hidden = true;
-        // 자동 재생이 막히면 음소거로 시작한다. 컨트롤로 음소거를 해제할 수 있다.
-        player.play().catch(function () {
-            player.muted = true;
-            player.play();
-            unmuteButton.hidden = false;
-        });
-    };
-    var unmuteButton = document.getElementById('unmute-button');
     unmuteButton.addEventListener('click', function () {
         player.muted = false;
         unmuteButton.hidden = true;
@@ -89,18 +81,17 @@
         if (!player.muted) { unmuteButton.hidden = true; }
     });
 
-    // 방송이 끝났거나 정원이 찼으면 더는 연결이 끊긴 것으로 보지 않는다.
-    var settled = false;
-
     function stopPlayback() {
         player.pause();
         player.srcObject = null;
-        pc.close();
+        retired.concat(pc ? [pc] : []).forEach(function (old) { old.close(); });
+        retired = [];
     }
 
     // 방송이 끝나면 새로고침 없이 영상을 멈추고 종료 안내로 바꾼다.
     function showEnded() {
         settled = true;
+        clearTimeout(retryTimer);
         stopPlayback();
         document.querySelector('.player').style.display = 'none';
         status.hidden = true;
@@ -111,7 +102,7 @@
         document.getElementById('ended-view').hidden = false;
     }
 
-    // 종료·정원 초과 없이 연결이 끊기면 알리고 다시 연결하도록 안내한다.
+    // 다시 접속하지 못하고 포기할 때 알리고 새로고침하도록 안내한다.
     function showDisconnected() {
         if (settled) { return; }
         settled = true;
@@ -119,36 +110,101 @@
         status.textContent = '연결이 끊어졌습니다. 페이지를 새로고침해(다시 연결) 주세요.';
         status.hidden = false;
     }
-    ws.onclose = showDisconnected;
-    ws.onerror = showDisconnected;
 
-    // 메시지를 순서대로 처리한다(offer 처리 전에 candidate가 앞지르지 않도록).
-    var queue = Promise.resolve();
-    ws.onmessage = function (event) {
-        var msg = JSON.parse(event.data);
-        if (msg.type === 'full') {
-            settled = true;
-            status.textContent = '시청자가 가득 찼습니다';
+    // 다시 접속이 거절되는 이유가 방송 종료(서버 재시작 포함)인지 시청 화면으로 확인한다.
+    function fetchEnded() {
+        return fetch('/live/' + liveId, { credentials: 'same-origin' }).then(function (response) {
+            return response.text();
+        }).then(function (html) {
+            var badge = new DOMParser().parseFromString(html, 'text/html').getElementById('status-badge');
+            return !!badge && badge.classList.contains('badge-ended');
+        }).catch(function () { return false; });
+    }
+
+    // ended 없이 연결이 끊기면(서버 인스턴스 교체 등) 다시 접속해 처음부터 협상한다. 재생 중인 영상은 새 영상이 올 때까지 둔다.
+    function reconnect() {
+        if (settled) { return; }
+        attempts += 1;
+        if (attempts > 20) {
+            showDisconnected();
             return;
         }
-        if (msg.type === 'ended') {
-            showEnded();
-            return;
+        if (!player.srcObject) {
+            status.textContent = '방송 연결 중...';
+            status.hidden = false;
         }
-        queue = queue.then(function () {
-            if (msg.type === 'offer') {
-                return pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp }).then(function () {
-                    return pc.createAnswer();
-                }).then(function (answer) {
-                    return pc.setLocalDescription(answer);
-                }).then(function () {
-                    send({ type: 'answer', sdp: pc.localDescription.sdp });
-                });
-            } else if (msg.type === 'candidate') {
-                return pc.addIceCandidate(msg.candidate);
+        fetchEnded().then(function (ended) {
+            if (settled) { return; }
+            if (ended) {
+                showEnded();
+                return;
             }
-        }).catch(function (e) { console.warn(e); });
-    };
+            retryTimer = setTimeout(connect, Math.min(1000 * Math.pow(2, attempts - 1), 5000));
+        });
+    }
+
+    function connect() {
+        if (settled) { return; }
+        var socket = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId + '/viewer');
+        var connection = new RTCPeerConnection({ iceServers: iceServers });
+        if (pc) { retired.push(pc); }
+        ws = socket;
+        pc = connection;
+
+        connection.onicecandidate = function (event) {
+            if (event.candidate && pc === connection) {
+                send({ type: 'candidate', candidate: event.candidate });
+            }
+        };
+        connection.ontrack = function (event) {
+            if (pc !== connection) { return; }
+            player.srcObject = event.streams[0];
+            retired.forEach(function (old) { old.close(); });
+            retired = [];
+            status.hidden = true;
+            // 자동 재생이 막히면 음소거로 시작한다. 컨트롤로 음소거를 해제할 수 있다.
+            player.play().catch(function () {
+                player.muted = true;
+                player.play();
+                unmuteButton.hidden = false;
+            });
+        };
+        socket.onclose = function () {
+            if (socket === ws) { reconnect(); }
+        };
+
+        // 메시지를 순서대로 처리한다(offer 처리 전에 candidate가 앞지르지 않도록).
+        var queue = Promise.resolve();
+        socket.onmessage = function (event) {
+            var msg = JSON.parse(event.data);
+            if (msg.type === 'full') {
+                settled = true;
+                status.textContent = '시청자가 가득 찼습니다';
+                status.hidden = false;
+                return;
+            }
+            if (msg.type === 'ended') {
+                showEnded();
+                return;
+            }
+            queue = queue.then(function () {
+                if (msg.type === 'offer') {
+                    attempts = 0;
+                    return connection.setRemoteDescription({ type: 'offer', sdp: msg.sdp }).then(function () {
+                        return connection.createAnswer();
+                    }).then(function (answer) {
+                        return connection.setLocalDescription(answer);
+                    }).then(function () {
+                        send({ type: 'answer', sdp: connection.localDescription.sdp });
+                    });
+                } else if (msg.type === 'candidate') {
+                    return connection.addIceCandidate(msg.candidate);
+                }
+            }).catch(function (e) { console.warn(e); });
+        };
+    }
+
+    connect();
 })();
 </script>
 </body>

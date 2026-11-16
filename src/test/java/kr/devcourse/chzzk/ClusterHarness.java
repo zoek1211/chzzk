@@ -94,6 +94,7 @@ final class ClusterHarness {
                     "--server.port=0",
                     "--chzzk.data-dir=" + dataDir,
                     "--chzzk.instance-id=" + name + "-" + number,
+                    "--chzzk.cluster.redis-prefix=chzzk-test-" + number + ":",
                     "--spring.datasource.url=" + jdbcUrl,
                     "--spring.datasource.username=" + postgres.getUsername(),
                     "--spring.datasource.password=" + postgres.getPassword(),
