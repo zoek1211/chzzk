@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** 클러스터 모드 라이브: 방송자와 시청자가 다른 인스턴스에 붙어도 동작하고, 인스턴스가 사라져도 라이브가 이어진다. */
@@ -201,6 +202,52 @@ class ClusterLiveTest {
 
                 await().atMost(Duration.ofSeconds(10)).until(() -> b.anonymous().isEnded(live));
                 assertThat((String) viewer.next("$.type")).isEqualTo("ended");
+            }
+        }
+    }
+
+    private static StringRedisTemplate redis(ClusterHarness.Instance instance) {
+        return instance.context().getBean(StringRedisTemplate.class);
+    }
+
+    private static String presenceKey(ClusterHarness.Instance instance, String live) {
+        return instance.context().getEnvironment().getProperty("chzzk.cluster.redis-prefix") + "live:" + live + ":presence";
+    }
+
+    @Test
+    void 연결을_쥔_채_접속_기록_키가_만료돼도_되살려서_방송이_끝나지_않는다() throws Exception {
+        try (var cluster = ClusterHarness.newCluster(dataDir)) {
+            var a = cluster.start("A", "--chzzk.live.broadcaster-join-timeout=2s");
+            TestLogin.Http owner = a.member();
+            String live = owner.startedLiveId("키 만료");
+
+            try (var broadcaster = SignalingClient.broadcaster(a.port(), live, owner)) {
+                broadcaster.next();
+                redis(a).delete(presenceKey(a, live));
+
+                Thread.sleep(5000); // 유예 시간(2초)보다 오래 기다려도 갱신이 기록을 되살린다.
+
+                assertThat(a.anonymous().isEnded(live)).isFalse();
+                assertThat(broadcaster.isClosed()).isFalse();
+                assertThat(redis(a).hasKey(presenceKey(a, live))).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void 접속_기록을_다른_방송자가_쥐고_있으면_이쪽_방송자_연결은_중복으로_닫히고_방송은_유지된다() throws Exception {
+        try (var cluster = ClusterHarness.newCluster(dataDir)) {
+            var a = cluster.start("A", "--chzzk.live.broadcaster-join-timeout=1h");
+            TestLogin.Http owner = a.member();
+            String live = owner.startedLiveId("중복 방송자");
+
+            try (var broadcaster = SignalingClient.broadcaster(a.port(), live, owner)) {
+                broadcaster.next();
+                redis(a).opsForValue().set(presenceKey(a, live), "B-other|session-x");
+
+                await().atMost(Duration.ofSeconds(8)).until(broadcaster::isClosed);
+                assertThat(broadcaster.closeCode()).isEqualTo(1008);
+                assertThat(a.anonymous().isEnded(live)).isFalse();
             }
         }
     }

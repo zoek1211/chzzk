@@ -1,6 +1,7 @@
 package kr.devcourse.chzzk.live;
 
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import kr.devcourse.chzzk.member.Member;
@@ -79,10 +80,15 @@ public class LiveBroadcastService {
         return broadcast;
     }
 
-    /** 방송자 연결이 끊겨 종료한다. 없거나 이미 종료면 아무 일도 없다. 내부(시그널링)용. */
+    /**
+     * 방송자 연결이 끊겨 종료한다. 없거나 이미 종료면 아무 일도 없다. 내부(시그널링)용.
+     * 방송 중에서 종료로 바뀐 한 번만 종료 이벤트를 낸다(여러 인스턴스가 동시에 불러도 한 번).
+     */
     @Transactional
     public void endByDisconnect(Long id) {
-        broadcasts.findById(id).ifPresent(this::endAndAnnounce);
+        if (broadcasts.endIfOnAir(id, Instant.now()) > 0) {
+            events.publishEvent(new LiveEnded(id));
+        }
     }
 
     /** 방송 중인 라이브 방송의 id. 클러스터 모드의 방송자 접속 유예 검사가 쓴다. 내부용. */

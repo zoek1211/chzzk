@@ -1,7 +1,6 @@
 package kr.devcourse.chzzk.live;
 
 import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -15,20 +14,19 @@ class LiveStartupCleanup implements SmartInitializingSingleton {
 
     private final LiveBroadcastService live;
     private final JdbcTemplate jdbc;
-    private final boolean cluster;
+    private final LiveRooms rooms;
 
-    LiveStartupCleanup(LiveBroadcastService live, JdbcTemplate jdbc,
-                       @Value("${chzzk.cluster.enabled:false}") boolean cluster) {
+    LiveStartupCleanup(LiveBroadcastService live, JdbcTemplate jdbc, LiveRooms rooms) {
         this.live = live;
         this.jdbc = jdbc;
-        this.cluster = cluster;
+        this.rooms = rooms;
     }
 
     @Override
     public void afterSingletonsInstantiated() {
         // 2단계 데이터 파일에 남은 송출 키 해시 열(NOT NULL)은 ddl-auto=update 가 지우지 않아 새 라이브 저장을 막는다.
         jdbc.execute("ALTER TABLE live_broadcast DROP COLUMN IF EXISTS broadcast_key_hash");
-        if (!cluster) {
+        if (!rooms.livesOutliveInstance()) {
             live.endAllOnAir();
         }
     }

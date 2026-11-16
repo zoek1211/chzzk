@@ -28,8 +28,14 @@ K="kubectl --context $CTX"
 
 echo "==> Secret chzzk-secrets 준비"
 if $K get secret chzzk-secrets >/dev/null 2>&1; then
-  echo "    이미 있어 DB 비밀번호를 유지합니다."
+  echo "    이미 있어 DB 비밀번호와(환경변수로 새로 주지 않은) 토스 키를 유지합니다."
   DB_PASSWORD="$($K get secret chzzk-secrets -o jsonpath='{.data.db-password}' | base64 --decode)"
+  if [[ -z "${TOSS_CLIENT_KEY:-}" ]]; then
+    TOSS_CLIENT_KEY="$($K get secret chzzk-secrets -o jsonpath='{.data.toss-client-key}' | base64 --decode)"
+  fi
+  if [[ -z "${TOSS_SECRET_KEY:-}" ]]; then
+    TOSS_SECRET_KEY="$($K get secret chzzk-secrets -o jsonpath='{.data.toss-secret-key}' | base64 --decode)"
+  fi
 else
   DB_PASSWORD="$(openssl rand -hex 16)"
 fi

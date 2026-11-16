@@ -3,6 +3,7 @@ package kr.devcourse.chzzk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
@@ -72,6 +73,21 @@ class LiveEndWebTest {
         assertThat(html).contains("방송이 종료되었습니다", "곧 끝날 라이브", "종료");
         assertThat(html).doesNotContain("<video");
         assertThat(html.split("<time", -1)).hasSize(3); // 시작 시각과 종료 시각
+    }
+
+    @Test
+    void 상태_엔드포인트는_로그인_없이_방송_여부를_JSON으로_알려주고_없는_라이브는_404다() throws Exception {
+        Live live = start("상태 확인");
+        mvc.perform(get("/live/" + live.id() + "/status"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"onAir\":true}"));
+
+        end(live);
+
+        mvc.perform(get("/live/" + live.id() + "/status"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"onAir\":false}"));
+        mvc.perform(get("/live/999999/status")).andExpect(status().isNotFound());
     }
 
     @Test

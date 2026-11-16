@@ -1,5 +1,6 @@
 package kr.devcourse.chzzk.live;
 
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -67,11 +68,16 @@ class SignalingHandler extends TextWebSocketHandler {
     SignalingHandler(ObjectMapper json, LiveRooms rooms) {
         this.json = json;
         this.rooms = rooms;
-        rooms.attach(new Local());
+    }
+
+    /** 빈이 다 만들어진 뒤에 방 구현에 연결 창구를 넘긴다(생성자에서 this 를 내보내지 않는다). */
+    @PostConstruct
+    void attachToRooms() {
+        rooms.attach(new OwnConnections());
     }
 
     /** 이 인스턴스의 연결에 닿는 창구. 방 구현이 다른 인스턴스에서 온 메시지를 여기로 넘긴다. */
-    private final class Local implements LiveRooms.Local {
+    private final class OwnConnections implements LiveRooms.Connections {
 
         @Override
         public void deliver(String sessionId, ObjectNode message) {
@@ -82,7 +88,7 @@ class SignalingHandler extends TextWebSocketHandler {
         }
 
         @Override
-        public void endLocal(Long liveId) {
+        public void endConnectionsOf(Long liveId) {
             ObjectNode ended = message("ended");
             for (WebSocketSession session : List.copyOf(sessions.values())) {
                 if (Peer.of(session).liveId().equals(liveId)) {
@@ -91,6 +97,15 @@ class SignalingHandler extends TextWebSocketHandler {
                     send(session, ended);
                     close(session, CloseStatus.NORMAL.withReason("방송 종료"));
                 }
+            }
+        }
+
+        @Override
+        public void closeDuplicateBroadcaster(String sessionId) {
+            WebSocketSession session = sessions.get(sessionId);
+            if (session != null) {
+                broadcasters.remove(sessionId); // 접속 기록은 다른 인스턴스 것이므로 닫힐 때 건드리지 않는다.
+                close(session, CloseStatus.POLICY_VIOLATION.withReason("이미 방송자가 접속해 있습니다"));
             }
         }
     }
@@ -113,7 +128,7 @@ class SignalingHandler extends TextWebSocketHandler {
      */
     @EventListener
     void onContextClosed(ContextClosedEvent event) {
-        if (!rooms.keepsLivesOnShutdown()) {
+        if (!rooms.livesOutliveInstance()) {
             return;
         }
         for (WebSocketSession session : List.copyOf(sessions.values())) {

@@ -11,18 +11,21 @@ import tools.jackson.databind.node.ObjectNode;
  */
 interface LiveRooms {
 
-    /** 이 인스턴스가 가진 연결에 메시지를 전하거나 연결을 닫는 쪽(시그널링 핸들러). */
-    interface Local {
+    /** 이 인스턴스가 직접 쥔 WebSocket 연결에 메시지를 전하거나 연결을 닫는 쪽(시그널링 핸들러). */
+    interface Connections {
 
         /** 이 인스턴스의 그 세션에 메시지를 보낸다. 없으면 무시한다. */
         void deliver(String sessionId, ObjectNode message);
 
         /** 이 인스턴스의 그 라이브 연결 모두에 {@code ended}를 보내고 닫는다. */
-        void endLocal(Long liveId);
+        void endConnectionsOf(Long liveId);
+
+        /** 이 인스턴스의 그 방송자 연결을 중복 방송자로 닫는다(다른 인스턴스의 방송자가 접속 기록을 쥐고 있다). */
+        void closeDuplicateBroadcaster(String sessionId);
     }
 
-    /** 핸들러가 만들어질 때 한 번 불린다. 구현은 여기서부터 다른 인스턴스의 메시지를 받아도 된다. */
-    void attach(Local local);
+    /** 핸들러가 준비되면 한 번 불린다. 구현은 이 연결 창구로 다른 인스턴스의 메시지를 넘겨 준다. */
+    void attach(Connections connections);
 
     /** 방송자로 들인다. 이미 다른 방송자가 있으면 false. */
     boolean admitBroadcaster(Long liveId, String sessionId);
@@ -49,8 +52,11 @@ interface LiveRooms {
     /** 라이브가 종료되었다: 방 상태를 지우고 그 라이브의 모든 연결(모든 인스턴스)에 종료를 알린다. */
     void liveEnded(Long liveId);
 
-    /** 이 인스턴스가 정상 종료할 때 자기 연결을 "재접속하라"로 닫고 방송은 그대로 두는가(클러스터 모드). */
-    default boolean keepsLivesOnShutdown() {
+    /**
+     * 라이브가 인스턴스보다 오래 가는가(클러스터 모드). 그렇다면 인스턴스가 정상 종료할 때 자기 연결을 "재접속하라"로 닫고 방송은
+     * 그대로 두며, 시작할 때 방송 중인 라이브를 종료로 바꾸지 않는다.
+     */
+    default boolean livesOutliveInstance() {
         return false;
     }
 

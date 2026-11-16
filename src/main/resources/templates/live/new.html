@@ -155,13 +155,13 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
     }
 
     // 서버가 바뀌는 중이어도 라이브는 이어지므로, ended 없이 끊기면 다시 접속한다. 시청자 피어(P2P)는 그대로 둔다.
-    // 다시 접속이 거절되는 이유가 방송 종료(단독 모드의 연결 끊김 포함)인지 시청 화면으로 확인한다.
+    // 브라우저는 WebSocket 핸드셰이크의 거절 이유를 볼 수 없으므로, 다시 접속하기 전에 방송 상태 엔드포인트로 종료 여부를 확인한다.
+    // 확인이 실패하면(네트워크 오류 등) 종료가 아닌 것으로 보고 계속 재시도하되, 재시도는 20번까지만 한다(아래 reconnect).
     function fetchEnded(id) {
-        return fetch('/live/' + id, { credentials: 'same-origin' }).then(function (response) {
-            return response.text();
-        }).then(function (html) {
-            var badge = new DOMParser().parseFromString(html, 'text/html').getElementById('status-badge');
-            return !!badge && badge.classList.contains('badge-ended');
+        return fetch('/live/' + id + '/status', { credentials: 'same-origin' }).then(function (response) {
+            return response.ok ? response.json() : null;
+        }).then(function (state) {
+            return !!state && state.onAir === false;
         }).catch(function () { return false; });
     }
 

@@ -33,7 +33,7 @@ class MemoryLiveRooms implements LiveRooms {
         thread.setDaemon(true);
         return thread;
     });
-    private volatile Local local;
+    private volatile Connections connections;
 
     MemoryLiveRooms(
             LiveBroadcastService live,
@@ -55,8 +55,8 @@ class MemoryLiveRooms implements LiveRooms {
     }
 
     @Override
-    public void attach(Local local) {
-        this.local = local;
+    public void attach(Connections connections) {
+        this.connections = connections;
     }
 
     @Override
@@ -114,7 +114,7 @@ class MemoryLiveRooms implements LiveRooms {
         Room room = rooms.get(liveId);
         String broadcaster = room == null ? null : room.broadcaster;
         if (broadcaster != null) {
-            local.deliver(broadcaster, message);
+            connections.deliver(broadcaster, message);
         }
     }
 
@@ -122,7 +122,7 @@ class MemoryLiveRooms implements LiveRooms {
     public void toViewer(Long liveId, String viewerId, ObjectNode message) {
         Room room = rooms.get(liveId);
         if (room != null && room.viewers.contains(viewerId)) {
-            local.deliver(viewerId, message);
+            connections.deliver(viewerId, message);
         }
     }
 
@@ -146,6 +146,6 @@ class MemoryLiveRooms implements LiveRooms {
     @Override
     public void liveEnded(Long liveId) {
         rooms.remove(liveId);
-        local.endLocal(liveId);
+        connections.endConnectionsOf(liveId);
     }
 }

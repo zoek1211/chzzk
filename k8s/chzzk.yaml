@@ -25,7 +25,8 @@ spec:
       labels:
         app: chzzk
     spec:
-      terminationGracePeriodSeconds: 45
+      # preStop 대기(5초) + 서버 종료(graceful 30초 안팎)를 덮는다.
+      terminationGracePeriodSeconds: 60
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -36,6 +37,11 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+          lifecycle:
+            preStop:
+              # 엔드포인트에서 빠지고 새 연결이 끊길 시간을 벌어 준 뒤 SIGTERM 이 간다.
+              exec:
+                command: ["sleep", "5"]
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: cluster
