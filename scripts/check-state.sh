@@ -29,6 +29,7 @@ post /signup --data-urlencode "loginId=$USER_ID" --data-urlencode "password=$PAS
   --data-urlencode "nickname=$USER_ID" >/dev/null
 curl -s -o /dev/null -b "$JAR" -c "$JAR" "$BASE/login"
 post /login --data-urlencode "username=$USER_ID" --data-urlencode "password=$PASSWORD" >/dev/null
+curl -s -o /dev/null -b "$JAR" -c "$JAR" "$BASE/broadcasts/new" # 로그인 뒤 바뀐 CSRF 토큰 받기
 
 created="$(post /broadcasts --data-urlencode "title=$TITLE" \
   --data-urlencode "videoUrl=https://example.com/scale-check.mp4")"

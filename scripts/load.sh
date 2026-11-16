@@ -13,6 +13,11 @@ $K create configmap k6-script --from-file="$ROOT/load/k6-load.js" --dry-run=clie
 echo "==> 이전 k6 Job 삭제 후 재실행"
 $K delete job k6-load --ignore-not-found --wait=true
 $K apply -f "$ROOT/k8s/k6-job.yaml"
+# Job이 파드를 만들기 전에는 wait가 "no matching resources"로 바로 끝나므로, 파드가 생길 때까지 먼저 기다린다.
+for _ in $(seq 1 90); do
+  if [[ -n "$($K get pod -l app=k6-load -o name 2>/dev/null)" ]]; then break; fi
+  sleep 2
+done
 $K wait --for=condition=Ready pod -l app=k6-load --timeout=180s || true
 
 echo "==> 로그 (Ctrl-C로 로그만 끊어도 Job은 계속 돈다)"
