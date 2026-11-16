@@ -85,6 +85,12 @@ public class LiveBroadcastService {
         broadcasts.findById(id).ifPresent(this::endAndAnnounce);
     }
 
+    /** 방송 중인 라이브 방송의 id. 클러스터 모드의 방송자 접속 유예 검사가 쓴다. 내부용. */
+    @Transactional(readOnly = true)
+    public List<Long> onAirIds() {
+        return broadcasts.findAllByStatus(LiveStatus.ON_AIR).stream().map(LiveBroadcast::getId).toList();
+    }
+
     /** 서비스가 다시 시작될 때 남아 있는 방송 중 라이브 방송을 모두 종료로 바꾼다. */
     @Transactional
     public int endAllOnAir() {

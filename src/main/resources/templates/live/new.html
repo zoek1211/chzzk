@@ -130,9 +130,15 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
     var peers = {};
 
     var ws = null;
+    // 종료되었거나 이 화면에서 끝낸 뒤에는 다시 접속하지 않는다.
+    var finished = false;
+    var attempts = 0;
+    var retryTimer = null;
 
     // 방송 종료 뒤에는 시그널링 연결과 모든 시청자 피어 연결을 닫는다.
     function closeBroadcast() {
+        finished = true;
+        clearTimeout(retryTimer);
         Object.keys(peers).forEach(function (id) { removeViewer(id); });
         if (ws) {
             ws.onclose = null;
@@ -148,14 +154,48 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
         }
     }
 
+    // 서버가 바뀌는 중이어도 라이브는 이어지므로, ended 없이 끊기면 다시 접속한다. 시청자 피어(P2P)는 그대로 둔다.
+    // 다시 접속이 거절되는 이유가 방송 종료(단독 모드의 연결 끊김 포함)인지 시청 화면으로 확인한다.
+    function fetchEnded(id) {
+        return fetch('/live/' + id, { credentials: 'same-origin' }).then(function (response) {
+            return response.text();
+        }).then(function (html) {
+            var badge = new DOMParser().parseFromString(html, 'text/html').getElementById('status-badge');
+            return !!badge && badge.classList.contains('badge-ended');
+        }).catch(function () { return false; });
+    }
+
+    function reconnect(id) {
+        attempts += 1;
+        if (attempts > 20) {
+            show('방송 서버에 다시 연결하지 못했습니다. 방송이 종료되었을 수 있습니다. 새로고침해 주세요.');
+            return;
+        }
+        show('방송 서버와 연결이 끊어졌습니다. 다시 연결하는 중입니다...');
+        fetchEnded(id).then(function (ended) {
+            if (finished) { return; }
+            if (ended) {
+                message.hidden = true;
+                showEnded();
+                return;
+            }
+            retryTimer = setTimeout(function () {
+                if (!finished) { signal(id); }
+            }, Math.min(1000 * Math.pow(2, attempts - 1), 5000));
+        });
+    }
+
     function signal(liveId) {
         var scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
         // 로그인 세션 쿠키가 접속에 실리고, 서버가 핸드셰이크에서 소유자인지 검사한다.
         ws = new WebSocket(scheme + '//' + location.host + '/ws/live/' + liveId + '/broadcaster');
         var socket = ws;
 
+        // 다시 접속한 뒤에도 기존 시청자 피어가 지금 연결로 신호를 보내도록 현재 연결을 쓴다.
         function send(payload) {
-            socket.send(JSON.stringify(payload));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(payload));
+            }
         }
 
         function addViewer(viewerId) {
@@ -165,6 +205,11 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
             pc.onicecandidate = function (event) {
                 if (event.candidate) {
                     send({ type: 'candidate', viewerId: viewerId, candidate: event.candidate });
+                }
+            };
+            pc.onconnectionstatechange = function () {
+                if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                    if (peers[viewerId] === pc) { removeViewer(viewerId); }
                 }
             };
             pc.createOffer().then(function (offer) {
@@ -179,8 +224,11 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
             var msg = JSON.parse(event.data);
             queue = queue.then(function () {
                 var pc = peers[msg.viewerId];
-                if (msg.type === 'viewer-joined') {
-                    addViewer(msg.viewerId);
+                if (msg.type === 'authenticated') {
+                    attempts = 0;
+                    message.hidden = true;
+                } else if (msg.type === 'viewer-joined') {
+                    if (!peers[msg.viewerId]) { addViewer(msg.viewerId); } // 다시 접속하면 이미 연결된 시청자도 다시 알려 온다.
                 } else if (msg.type === 'ended') {
                     showEnded();
                 } else if (msg.type === 'viewer-left') {
@@ -193,7 +241,8 @@ window.ICE_SERVERS = JSON.parse(/*[[${iceServersJson}]]*/ '[]');
             }).catch(function (e) { console.warn(e); });
         };
         socket.onclose = function () {
-            Object.keys(peers).forEach(removeViewer);
+            if (socket !== ws || finished) { return; }
+            reconnect(liveId);
         };
     }
 
