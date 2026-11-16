@@ -1,0 +1,17 @@
+.git
+.gitignore
+.gradle
+.claude
+.idea
+.vscode
+build
+data
+k8s
+load
+docs
+scripts
+*.md
+.env
+.env.*
+*.p12
+*.jks

@@ -1,0 +1,139 @@
+# 앱: 공유 영상 PVC, Deployment, NodePort Service, HPA.
+# Secret chzzk-secrets(db-password, 선택: toss-client-key, toss-secret-key)는 cluster-up.sh가 만든다.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chzzk-data
+spec:
+  # kind 단일 노드에서는 같은 노드의 파드들이 이 볼륨을 함께 마운트한다.
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chzzk
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chzzk
+  template:
+    metadata:
+      labels:
+        app: chzzk
+    spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: chzzk
+          image: chzzk:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: cluster
+            - name: CHZZK_DB_URL
+              value: jdbc:postgresql://postgres:5432/chzzk
+            - name: CHZZK_DB_USERNAME
+              value: chzzk
+            - name: CHZZK_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: chzzk-secrets
+                  key: db-password
+            - name: CHZZK_REDIS_HOST
+              value: redis
+            - name: CHZZK_REDIS_PORT
+              value: "6379"
+            - name: CHZZK_DATA_DIR
+              value: /data
+            - name: CHZZK_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TOSS_CLIENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chzzk-secrets
+                  key: toss-client-key
+                  optional: true
+            - name: TOSS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chzzk-secrets
+                  key: toss-secret-key
+                  optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: chzzk-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chzzk
+spec:
+  type: NodePort
+  selector:
+    app: chzzk
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: chzzk
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: chzzk
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60
