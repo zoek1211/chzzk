@@ -1,0 +1,35 @@
+# k6 부하 Job. ConfigMap k6-script는 load.sh가 load/k6-load.js에서 만든다(스크립트 중복 방지).
+# 적용 전에 `kubectl delete job k6-load --ignore-not-found`로 지워야 다시 실행된다(load.sh가 함).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-load
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: k6-load
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:1.2.3
+          args: ["run", "/scripts/k6-load.js"]
+          env:
+            - name: TARGET
+              value: http://chzzk:8080
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: script
+          configMap:
+            name: k6-script
