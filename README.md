@@ -8,6 +8,34 @@
 | 4단계 | 치지직 만들기 ④ 도네이션: 토스페이먼츠 테스트 결제 (1~3단계 기능 유지) | `step-4` |
 | 5단계 | 치지직 만들기 ⑤ 로컬 오토스케일: kind 클러스터에서 여러 인스턴스와 HPA (1~4단계 기능 유지) | `step-5` |
 
+**목차**
+
+- [실행 방법](#실행-방법)
+  - [클러스터 실행 (5단계: 여러 인스턴스와 오토스케일)](#클러스터-실행-5단계-여러-인스턴스와-오토스케일)
+- [환경변수](#환경변수)
+  - [토스페이먼츠 테스트 키 준비](#토스페이먼츠-테스트-키-준비)
+- [이번 단계 구현 범위](#이번-단계-구현-범위)
+  - [1단계: 녹화방송](#1단계-녹화방송)
+  - [2단계: 라이브 방송](#2단계-라이브-방송)
+  - [로그인 없이 송출·시청하는 구성](#로그인-없이-송출시청하는-구성)
+  - [3단계: 인증·인가와 댓글](#3단계-인증인가와-댓글)
+  - [4단계: 도네이션](#4단계-도네이션)
+  - [5단계: 로컬 오토스케일](#5단계-로컬-오토스케일)
+  - [공개 범위](#공개-범위)
+  - [코드 구조](#코드-구조)
+  - [자동 테스트](#자동-테스트)
+- [휴대폰 연결 방법](#휴대폰-연결-방법)
+  - [기본: cloudflared 터널 (권장)](#기본-cloudflared-터널-권장)
+  - [같은 Wi-Fi 권장, TURN이 필요한 경우](#같은-wi-fi-권장-turn이-필요한-경우)
+  - [선택: 직접 HTTPS (자체 서명 키스토어)](#선택-직접-https-자체-서명-키스토어)
+  - [카메라·마이크 권한 설정](#카메라마이크-권한-설정)
+- [직접 확인 절차](#직접-확인-절차)
+  - [1단계: 녹화방송](#1단계-녹화방송-1)
+  - [2단계: 라이브 방송](#2단계-라이브-방송-1)
+  - [3단계: 인증·인가와 댓글](#3단계-인증인가와-댓글-1)
+  - [4단계: 도네이션](#4단계-도네이션-1)
+  - [5단계: 로컬 오토스케일](#5단계-로컬-오토스케일-1)
+
 **녹화방송(다시보기)** 을 등록·시청하고(1단계), 휴대폰 카메라·마이크로 **라이브 방송** 을 송출해 다른 화면에서 실시간으로 시청하며(2단계), **회원가입·로그인** 한 회원이 자기 방송만 관리하고 방송마다 **댓글** 로 소통하고(3단계), 방송 소유자에게 토스페이먼츠 **테스트 결제** 로 **후원** 하는(4단계) 서비스입니다. 같은 서버를 로컬 Kubernetes(kind)에서 **여러 인스턴스** 로 띄우고, 부하에 따라 인스턴스 수가 자동으로 늘고 줄어도 로그인·방송·댓글·후원·라이브가 유지됩니다(5단계). 방송 목록·시청·댓글 읽기는 로그인 없이 공개입니다([공개 범위](#공개-범위)).
 
 - Java 25 이상, Spring Boot 4.1, Spring MVC + Thymeleaf, Spring Data JPA, Spring WebSocket, Spring Security(세션 폼 로그인·CSRF)
@@ -513,155 +541,47 @@ CHZZK_SSL_KEY_STORE_PASSWORD=<keytool에서 정한 비밀번호> \
 
 ## 직접 확인 절차
 
-1단계·2단계 절차는 당시 그대로 두었습니다. 최신 단계가 맨 위입니다. 5단계(로컬 오토스케일)는 Docker·kind·kubectl이, 4단계(도네이션)는 토스 테스트 키가 필요합니다. 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하므로, 해당 절차 전에 헤더의 **회원가입** 으로 가입(자동 로그인)하세요. 1단계 curl 예시는 로그인 쿠키와 CSRF 토큰이 없으면 `302 /login` 또는 `403` 이 돌아오고, 로그인 포함 요청은 [3단계 curl 예시](#3단계-인증인가와-댓글-1)에 있습니다.
+1단계부터 순서대로 정리했습니다. 1단계·2단계 절차는 당시 그대로 두었습니다. 5단계(로컬 오토스케일)는 Docker·kind·kubectl이, 4단계(도네이션)는 토스 테스트 키가 필요합니다. 3단계부터 녹화방송 등록·라이브 시작에는 로그인이 필요하므로, 해당 절차 전에 헤더의 **회원가입** 으로 가입(자동 로그인)하세요. 1단계 curl 예시는 로그인 쿠키와 CSRF 토큰이 없으면 `302 /login` 또는 `403` 이 돌아오고, 로그인 포함 요청은 [3단계 curl 예시](#3단계-인증인가와-댓글-1)에 있습니다.
 
-### 5단계: 로컬 오토스케일
+### 1단계: 녹화방송
 
-부하를 걸면 인스턴스 수가 늘고, 부하를 멈추면 다시 줄어드는지, 그동안 로그인 상태·방송 목록·댓글이 그대로인지 확인합니다. **아래 결과는 2026-11-16 이 저장소의 스크립트로 실제 kind 클러스터에서 실행한 출력입니다**(전체 기록: [docs/scale-check/](docs/scale-check/)). 실행 환경: macOS, Docker Desktop(CPU 8개, 메모리 4GB), kind 단일 노드.
+1. `./gradlew bootRun` 으로 서버를 띄우고 <http://localhost:8080> 을 엽니다. 처음에는 등록된 녹화방송이 없다는 안내가 보입니다.
+2. **녹화방송 등록** 을 누릅니다.
+3. 제목을 입력하고 **영상 파일 업로드** 에서 mp4 파일을 고른 뒤 **등록** 을 누릅니다.
+   - 상세 화면으로 이동하고, 플레이어에서 영상이 재생되는지 확인합니다. 재생 바로 원하는 위치로 이동해 봅니다.
+4. 다시 **녹화방송 등록** 에서 제목과 **이미 저장된 영상 주소**(예: 공개된 mp4 주소)를 입력해 등록합니다.
+   - 상세 화면에서 그 주소의 영상이 재생되는지 확인합니다.
+5. 잘못된 입력을 확인합니다.
+   - 영상 없이 제목만 등록 → "영상 파일을 올리거나 영상 주소를 입력해 주세요." 오류가 보이고 입력한 제목은 유지됩니다.
+   - 파일과 주소를 둘 다 넣어 등록 → "하나만 입력해 주세요." 오류
+   - 주소에 `ftp://...` 입력 → http/https 오류
+6. 상단 로고를 눌러 목록으로 가서, 등록한 두 방송이 최신순으로 보이는지 확인하고 각각 눌러 상세로 이동합니다.
+7. 서버를 `Ctrl+C`로 끄고 다시 `./gradlew bootRun` 으로 띄웁니다.
+   - 목록에 두 방송이 그대로 있고, 업로드한 영상이 여전히 재생되는지 확인합니다.
+8. 처음 상태로 되돌리려면 서버를 끈 뒤 `data/` 디렉터리를 지웁니다.
 
-준비
-
-1. Docker를 켜고 kind·kubectl을 설치합니다(예: `brew install kind kubectl`).
-2. `scripts/cluster-up.sh` 로 배포합니다. 끝나면 `kubectl --context kind-chzzk get pods` 에 `chzzk-…` 파드 2개, `postgres`, `redis` 가 `Running` 입니다.
-3. 브라우저로 <http://localhost:8080> 에 접속해 가입·로그인하고 방송·댓글이 보이는지 봅니다. 응답 헤더 `X-Chzzk-Instance` 로 어느 인스턴스가 답했는지 볼 수 있습니다.
-
-```bash
-for i in 1 2 3 4 5 6; do curl -s -o /dev/null -D - http://localhost:8080/broadcasts | grep -i x-chzzk-instance; done
-# 두 파드 이름이 섞여 나오면 요청이 나뉘고 있는 것
-```
-
-스케일 아웃·인 확인
-
-1. 터미널 A: `kubectl --context kind-chzzk get hpa,pods -w` (또는 15초마다 `kubectl --context kind-chzzk get hpa chzzk`)
-2. 터미널 B: `scripts/check-state.sh` (확인용 회원을 만들어 로그인하고 방송·댓글을 하나 만든 뒤, 같은 세션으로 10초마다 확인)
-3. 터미널 C: `scripts/load.sh` (k6 Job, 약 5분 30초)
-4. 터미널 A에서 `REPLICAS` 가 2 → 3 → 5 로 늘었다가, 부하가 끝나고 약 1분 뒤부터 4 → 3 → 2 로 줄어드는지 봅니다.
-5. 터미널 B의 모든 줄이 `로그인=유지 방송목록=유지 댓글=유지` 이고, `응답 인스턴스` 가 여러 파드로 바뀌는지 봅니다.
-6. 끝나면 `scripts/cluster-down.sh` 로 정리합니다.
-
-실제 결과: 인스턴스 수 변화 (15초 간격 기록 64줄 중 변화가 보이는 줄. `kubectl get hpa chzzk`, 열: 시각 · 이름 · 대상 · CPU 사용률/목표 · 최소 · 최대 · **현재 인스턴스 수** · 나이)
-
-```
-23:22:20  chzzk   Deployment/chzzk   cpu: 42%/50%   2     5     2     47m
-23:22:36  chzzk   Deployment/chzzk   cpu: 58%/50%   2     5     2     47m
-23:23:19  chzzk   Deployment/chzzk   cpu: 76%/50%   2     5     3     48m
-23:26:11  chzzk   Deployment/chzzk   cpu: 362%/50%   2     5     3     51m
-23:26:26  chzzk   Deployment/chzzk   cpu: 357%/50%   2     5     5     51m
-23:26:58  chzzk   Deployment/chzzk   cpu: 432%/50%   2     5     5     52m
-23:29:37  chzzk   Deployment/chzzk   cpu: 30%/50%   2     5     5     54m
-23:31:56  chzzk   Deployment/chzzk   cpu: 22%/50%   2     5     5     57m
-23:32:11  chzzk   Deployment/chzzk   cpu: 17%/50%   2     5     4     57m
-23:32:42  chzzk   Deployment/chzzk   cpu: 14%/50%   2     5     3     57m
-23:33:13  chzzk   Deployment/chzzk   cpu: 6%/50%   2     5     2     58m
-23:39:36  chzzk   Deployment/chzzk   cpu: 7%/50%   2     5     2     64m
-```
-
-- 부하 시작 직후 CPU가 목표 50%를 넘어 **2 → 3**, 부하 유지 중 **3 → 5**(최대)로 늘었습니다.
-- 부하가 끝난 뒤(23:28 무렵) CPU가 내려가고, 축소 안정화 60초가 지난 뒤 **5 → 4 → 3 → 2**(최소)로 줄었습니다. 그 뒤로는 2개를 유지했습니다.
-- 중간의 `<unknown>` 은 새 파드가 막 떠서 metrics-server가 아직 지표를 모으지 못한 구간입니다.
-
-실제 결과: 스케일 중 상태 유지 (`scripts/check-state.sh`, 10초 간격 91번 중 일부)
-
-```
-확인용 회원 check1794838940, 방송 /broadcasts/2, 댓글 1개를 만들었습니다. 10초마다 확인합니다.
-23:22:22  응답 인스턴스=chzzk-58c7bf9969-x6pbp     로그인=유지 방송목록=유지 댓글=유지
-23:26:05  응답 인스턴스=chzzk-58c7bf9969-x6pbp     로그인=유지 방송목록=유지 댓글=유지
-23:26:15  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
-23:26:30  응답 인스턴스=chzzk-58c7bf9969-sj7n7     로그인=유지 방송목록=유지 댓글=유지
-23:26:41  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
-23:34:41  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
-```
-
-- 91번 모두 `로그인=유지 방송목록=유지 댓글=유지` 였고, 응답한 인스턴스는 5개 파드에 걸쳐 바뀌었습니다(전체: [docs/scale-check/2026-11-16-state.log](docs/scale-check/2026-11-16-state.log)).
-- k6 결과: 요청 597,305건, 실패 0%, 체크 100% 통과, p95 응답 106ms ([docs/scale-check/2026-11-16-k6-summary.txt](docs/scale-check/2026-11-16-k6-summary.txt)).
-
-라이브 확인 (클러스터 모드)
-
-1. 브라우저에서 라이브를 시작만 하고 방송자 화면을 열지 않으면, 접속 유예 30초 뒤 방송이 종료되고 열려 있던 시청 화면에 새로고침 없이 "방송이 종료되었습니다." 가 뜹니다(종료 판정과 종료 알림이 인스턴스 사이에 전달됨. 위 날짜에 브라우저로 확인).
-2. 휴대폰으로 송출하려면 [휴대폰 연결 방법](#휴대폰-연결-방법)처럼 `cloudflared tunnel --url http://localhost:8080` 으로 HTTPS 주소를 만들어 송출 화면을 엽니다. 시청 화면을 다른 기기에서 열면 방송자와 시청자가 서로 다른 인스턴스에 붙어도 영상이 보입니다.
-3. 방송 중에 `kubectl --context kind-chzzk delete pod <앱 파드 하나>` 로 인스턴스를 하나 없애도 방송은 종료되지 않고, 화면은 다시 접속합니다(방송자 연결이 끊긴 채 30초가 지나면 종료). 실제 휴대폰 송출은 이 문서를 쓰며 실행하지 않았고, 같은 동작을 `ClusterLiveTest` 가 확인합니다.
-
-### 4단계: 도네이션
-
-화면의 "성공"이 아니라 **서버가 결제사에 승인을 확인했을 때만** 후원이 확정되는지 확인합니다. **아래 절차는 문서로만 정리한 것이고, 이 문서를 쓴 시점에 실제 토스 테스트 결제는 실행하지 않았습니다**(자동 테스트는 가짜 결제사로 같은 흐름을 검증합니다).
-
-준비
-
-1. 토스 테스트 키를 준비합니다([토스페이먼츠 테스트 키 준비](#토스페이먼츠-테스트-키-준비)).
-2. 서버를 띄웁니다(깨끗한 상태는 먼저 `data/` 삭제): `TOSS_CLIENT_KEY=test_ck_<클라이언트키> TOSS_SECRET_KEY=test_sk_<시크릿키> ./gradlew bootRun`
-3. 일반 창에서 방송 소유자(회원 A)로 가입해 녹화방송 하나를 등록하고, 시크릿 창에서 후원자(회원 B)로 가입합니다.
-
-**브라우저로 확인**
-
-1. **키 없음**: 키 없이 서버를 띄우면 방송 화면의 후원 영역에 "결제 키가 설정되지 않아 후원을 받을 수 없습니다."만 보이고 합계는 0원입니다. 다른 화면은 평소처럼 동작합니다.
-2. **테스트 결제 성공**: B로 A의 방송 화면에서 금액(5,000원)과 메시지를 입력하고 **후원하기** 를 누릅니다. 토스 결제창에서 테스트 결제를 진행해 결제를 마칩니다(테스트 환경에서는 개발자센터 안내대로 테스트 카드 정보를 쓰며 실제 청구되지 않습니다). 결과 화면에 후원 확정이 보이고, 방송으로 돌아가면 합계 5,000원과 내역(B 닉네임·금액·메시지)이 보입니다.
-3. **성공 페이지 새로고침**: 결과 화면(주소가 `/donations/success?...`)에서 새로고침을 여러 번 누릅니다. 같은 결과 화면이 나오고, 방송 화면의 합계는 5,000원 그대로이며 내역도 1건입니다(중복 적립 없음).
-4. **결제 실패**: 후원하기 후 결제창에서 거절되는 테스트 결제(개발자센터의 테스트 안내 참고)를 진행합니다. "결제에 실패해 후원하지 않았습니다." 화면이 나오고 합계·내역은 그대로입니다.
-5. **결제창 닫기(취소)**: 후원하기 후 결제창을 닫습니다(결제창의 취소). "결제를 취소해 후원하지 않았습니다." 화면과 다시 시도 링크가 나오고, 합계·내역은 그대로입니다. 다시 시도하면 새 후원 주문으로 결제할 수 있습니다.
-6. **거절되는 후원**
-   - 로그인하지 않은 창: 후원 폼 대신 "로그인 후 후원" 링크만 보입니다.
-   - 소유자 A로 자기 방송: "이 방송에는 후원할 수 없습니다."만 보이고 폼이 없습니다.
-   - 라이브 방송도 같습니다(2단계 절차로 라이브를 시작하고 시청 화면에서 확인).
-7. **재시작**: 서버를 `Ctrl+C` 로 끄고 같은 `data/` 로 다시 띄웁니다. 확정된 후원과 합계가 그대로 남아 있습니다.
-
-**curl로 확인: 화면 버튼이 아니라 서버가 거절·중복 방지를 한다**
-
-토스 결제창 없이도 서버 응답을 볼 수 있는 항목입니다(깨끗한 `data/` 에서 시작해 녹화방송 번호가 1이라고 가정). [3단계 curl 예시](#3단계-인증인가와-댓글-1)의 도우미(`tok`, `code`, `refresh`)와 가입 절차를 먼저 실행해 `owner1.jar`(소유자), `other1.jar`(후원자), `anon.jar`(비로그인) 쿠키 파일과 소유자의 녹화방송(1번)이 있어야 합니다. 주석은 기대하는 결과입니다.
+curl로 확인할 수도 있습니다:
 
 ```bash
-BASE=http://localhost:8080
-J='Content-Type: application/json'
-order() { curl -s -b "$1.jar" -H "$J" -H "X-XSRF-TOKEN: $(tok $1.jar)" \
-          -d "{\"kind\":\"RECORDED\",\"broadcastId\":1,\"amount\":${2:-5000},\"message\":\"curl 후원\"}" $BASE/donations; }
-
-# 비로그인 -> 401
-curl -s -o /dev/null -w "%{http_code}\n" -b anon.jar -H "$J" -H "X-XSRF-TOKEN: $(tok anon.jar)" \
-     -d '{"kind":"RECORDED","broadcastId":1,"amount":5000}' $BASE/donations
-# CSRF 토큰 없이 -> 403
-curl -s -o /dev/null -w "%{http_code}\n" -b other1.jar -H "$J" \
-     -d '{"kind":"RECORDED","broadcastId":1,"amount":5000}' $BASE/donations
-# 소유자가 자기 방송에 -> 400 {"message":"자기 방송에는 후원할 수 없습니다."}
-order owner1
-# 금액 규칙 위반(500원) -> 400 {"message":"후원 금액은 1,000원 단위로 ..."}
-order other1 500
-# 후원자 -> 201 {"orderId":"...","amount":5000,"orderName":"hello 후원","clientKey":"test_ck_...",...}
-order other1
+curl -i -F title='테스트 다시보기' -F videoFile=@sample.mp4 http://localhost:8080/broadcasts
+curl -i -F title='외부 영상' -F videoUrl=https://example.com/video.mp4 http://localhost:8080/broadcasts
 ```
 
-**성공 주소는 후원자 본인만**: 로그인하지 않고 열면 `302`(로그인 화면), 다른 회원(`owner1.jar`)으로 열면 `403` 이고 주문은 바뀌지 않습니다.
+응답의 `Location` 헤더가 새 녹화방송의 상세 화면 주소입니다.
 
-```bash
-ORDER=<위 order other1 응답의 orderId>
-curl -s -o /dev/null -w "%{http_code}\n" "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=5000"             # 302 -> /login
-curl -s -o /dev/null -w "%{http_code}\n" -b owner1.jar "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=5000"   # 403
-```
+### 2단계: 라이브 방송
 
-**금액을 바꾼 success 주소 거절**: 위 `order other1` 응답의 `orderId` 를 `ORDER` 에 넣고, 주문 금액(5,000원)과 다른 금액으로 성공 주소를 직접 엽니다. 서버는 토스에 승인 요청을 보내지 않고 주문을 `실패` 로 닫습니다.
+> 3단계에서 바뀐 점: 송출 키가 없어져, 아래 절차는 휴대폰에서 먼저 로그인한 소유자가 시작·종료하는 것으로 바뀌었습니다(송출 키 관련 문구는 2단계 당시 기준). 로그인·권한 확인은 아래 [3단계 절차](#3단계-인증인가와-댓글-1)를 따르세요.
 
-```bash
-ORDER=<orderId>
-curl -s -o /dev/null -w "%{http_code}\n" -b other1.jar "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=1000"   # 400 (금액이 달라 후원을 확정하지 않았습니다)
-curl -s $BASE/broadcasts/1 | grep -c "curl 후원"                                                                  # 0 (합계·내역에 없음)
-```
+준비: 서버를 띄우고(`./gradlew bootRun`), 휴대폰용 HTTPS 주소를 만듭니다([휴대폰 연결 방법](#휴대폰-연결-방법)). 시청용으로 컴퓨터 브라우저(<http://localhost:8080>)를 따로 엽니다.
 
-**웹훅 재전송: 반복해도 합계가 늘지 않는다**: 웹훅은 토스가 이 서버를 호출하므로 공개 주소가 필요합니다. `cloudflared tunnel --url http://localhost:8080` 으로 얻은 주소를 `PUBLIC` 에 넣고, 개발자센터에 `$PUBLIC/donations/webhook` 을 등록해 둡니다(등록 없이 아래 curl만으로도 재전송을 흉내낼 수 있습니다). 브라우저에서 후원을 한 번 성공시킨 뒤 결과 화면 주소의 `paymentKey`·`orderId` 를 가져옵니다.
-
-```bash
-PUBLIC=https://<임의이름>.trycloudflare.com
-PK=<결과 화면 주소의 paymentKey>; OID=<결과 화면 주소의 orderId>
-for i in 1 2 3; do
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST $PUBLIC/donations/webhook -H 'Content-Type: application/json' \
-       -d "{\"eventType\":\"PAYMENT_STATUS_CHANGED\",\"data\":{\"paymentKey\":\"$PK\",\"orderId\":\"$OID\"}}"   # 매번 200 (로그인·CSRF 토큰 불필요)
-done
-curl -s $BASE/broadcasts/1 | grep -o "후원 합계.*원"   # 합계가 웹훅 전과 같음(내역도 1건)
-# 모르는 주문번호 -> 마찬가지로 200이고 아무것도 바뀌지 않음
-curl -s -o /dev/null -w "%{http_code}\n" -X POST $PUBLIC/donations/webhook -H 'Content-Type: application/json' \
-     -d '{"data":{"paymentKey":"x","orderId":"no-such-order"}}'
-```
-
-이미 확정된 주문의 웹훅·성공 주소 재호출은 토스를 다시 부르지 않고 같은 결과를 돌려줍니다. 결제를 마치지 않은 `대기` 주문에 웹훅이 오면 서버는 토스에 조회해 결제가 `DONE` 일 때만 확정하고, 그렇지 않으면 주문을 바꾸지 않습니다.
-
-이 상태 코드와 결과는 자동 테스트(`DonationWebTest`, `DonationFailWebTest`, `DonationWebhookTest`, `DonationSafetyWebTest`, `DonationDisabledWebTest`, `DonationRestartPersistenceTest`)가 가짜 결제사로 같은 요청을 보내 검증합니다. 위의 토스 결제창·웹훅 등록·cloudflared 구간은 실제로 실행해 확인하지 않았으므로 직접 확인해 주세요.
+1. **송출 시작**: 휴대폰에서 HTTPS 주소의 `/live/new` 를 열고 카메라·마이크를 허용합니다. 미리보기가 보이면 제목을 입력하고 **방송 시작** 을 누릅니다. "방송 중입니다"와 시청 화면 링크가 나옵니다.
+2. **다른 화면에서 시청**: 컴퓨터 브라우저의 방송 목록(`/broadcasts`)에서 "방송 중" 배지가 붙은 라이브를 눌러 시청 화면으로 갑니다. 몇 초 안에 휴대폰 영상이 나오는지 확인합니다. 소리가 안 나면 **음소거 해제** 를 누릅니다.
+3. **카메라 전환**: 휴대폰 송출 화면의 **카메라 전환** 을 눌러 전면/후면이 바뀌는지, 시청 화면의 영상이 끊김 없이 바뀌는지 확인합니다.
+4. **송출 종료 확인**: 휴대폰에서 **방송 종료** 를 누릅니다. 시청 화면에 종료 안내가 뜨고 영상이 멈추며, 방송 목록에서 해당 라이브에 "종료" 배지가 붙고 시작·종료 시각이 보이는지 확인합니다. 종료된 라이브는 다시 방송 중이 되지 않습니다.
+5. **연결 끊김 자동 종료**: 새 라이브를 시작하고 시청 화면을 연 뒤, 휴대폰의 송출 화면 탭을 닫거나 Wi-Fi를 끕니다. 시청 화면에 종료가 알려지고 목록에서 "종료"가 되는지 확인합니다.
+6. **시청 정원 초과**: `CHZZK_VIEWER_CAPACITY=2 ./gradlew bootRun` 으로 정원을 2로 줄여 서버를 다시 띄웁니다. 새 라이브를 시작한 뒤 시청 화면을 3개 탭에서 엽니다. 3번째 탭에는 "시청자가 가득 찼습니다"가 보이고, 앞의 두 탭 중 하나를 닫은 뒤 새로고침하면 들어와 영상이 나오는지 확인합니다. 이때 방송은 영향받지 않습니다.
+7. **재시작 후 상태**: 라이브를 시작하고 방송 중인 채로 서버를 `Ctrl+C` 로 끈 뒤 다시 띄웁니다. 목록에서 그 라이브가 "종료"로 보이고 제목·시작 시각이 남아 있는지 확인합니다(방송 중 상태로 돌아가지 않음).
 
 ### 3단계: 인증·인가와 댓글
 
@@ -774,42 +694,150 @@ code -b other1.jar -H "X-XSRF-TOKEN: $(tok other1.jar)" -X POST $BASE/comments/1
 
 비로그인 요청이 `302 /login` 이어도 데이터는 바뀌지 않습니다(이동만 시키고 처리하지 않음). 이 상태 코드들은 자동 테스트(`MemberAuthWebTest`, `RecordedBroadcastOwnerWebTest`, `LiveOwnerWebTest`, `Comment*WebTest`, `SignalingTest`)가 같은 요청으로 검증합니다.
 
-### 2단계: 라이브 방송
+### 4단계: 도네이션
 
-> 3단계에서 바뀐 점: 송출 키가 없어져, 아래 절차는 휴대폰에서 먼저 로그인한 소유자가 시작·종료하는 것으로 바뀌었습니다(송출 키 관련 문구는 2단계 당시 기준). 로그인·권한 확인은 위의 [3단계 절차](#3단계-인증인가와-댓글-1)를 따르세요.
+화면의 "성공"이 아니라 **서버가 결제사에 승인을 확인했을 때만** 후원이 확정되는지 확인합니다. **아래 절차는 문서로만 정리한 것이고, 이 문서를 쓴 시점에 실제 토스 테스트 결제는 실행하지 않았습니다**(자동 테스트는 가짜 결제사로 같은 흐름을 검증합니다).
 
-준비: 서버를 띄우고(`./gradlew bootRun`), 휴대폰용 HTTPS 주소를 만듭니다([휴대폰 연결 방법](#휴대폰-연결-방법)). 시청용으로 컴퓨터 브라우저(<http://localhost:8080>)를 따로 엽니다.
+준비
 
-1. **송출 시작**: 휴대폰에서 HTTPS 주소의 `/live/new` 를 열고 카메라·마이크를 허용합니다. 미리보기가 보이면 제목을 입력하고 **방송 시작** 을 누릅니다. "방송 중입니다"와 시청 화면 링크가 나옵니다.
-2. **다른 화면에서 시청**: 컴퓨터 브라우저의 방송 목록(`/broadcasts`)에서 "방송 중" 배지가 붙은 라이브를 눌러 시청 화면으로 갑니다. 몇 초 안에 휴대폰 영상이 나오는지 확인합니다. 소리가 안 나면 **음소거 해제** 를 누릅니다.
-3. **카메라 전환**: 휴대폰 송출 화면의 **카메라 전환** 을 눌러 전면/후면이 바뀌는지, 시청 화면의 영상이 끊김 없이 바뀌는지 확인합니다.
-4. **송출 종료 확인**: 휴대폰에서 **방송 종료** 를 누릅니다. 시청 화면에 종료 안내가 뜨고 영상이 멈추며, 방송 목록에서 해당 라이브에 "종료" 배지가 붙고 시작·종료 시각이 보이는지 확인합니다. 종료된 라이브는 다시 방송 중이 되지 않습니다.
-5. **연결 끊김 자동 종료**: 새 라이브를 시작하고 시청 화면을 연 뒤, 휴대폰의 송출 화면 탭을 닫거나 Wi-Fi를 끕니다. 시청 화면에 종료가 알려지고 목록에서 "종료"가 되는지 확인합니다.
-6. **시청 정원 초과**: `CHZZK_VIEWER_CAPACITY=2 ./gradlew bootRun` 으로 정원을 2로 줄여 서버를 다시 띄웁니다. 새 라이브를 시작한 뒤 시청 화면을 3개 탭에서 엽니다. 3번째 탭에는 "시청자가 가득 찼습니다"가 보이고, 앞의 두 탭 중 하나를 닫은 뒤 새로고침하면 들어와 영상이 나오는지 확인합니다. 이때 방송은 영향받지 않습니다.
-7. **재시작 후 상태**: 라이브를 시작하고 방송 중인 채로 서버를 `Ctrl+C` 로 끈 뒤 다시 띄웁니다. 목록에서 그 라이브가 "종료"로 보이고 제목·시작 시각이 남아 있는지 확인합니다(방송 중 상태로 돌아가지 않음).
+1. 토스 테스트 키를 준비합니다([토스페이먼츠 테스트 키 준비](#토스페이먼츠-테스트-키-준비)).
+2. 서버를 띄웁니다(깨끗한 상태는 먼저 `data/` 삭제): `TOSS_CLIENT_KEY=test_ck_<클라이언트키> TOSS_SECRET_KEY=test_sk_<시크릿키> ./gradlew bootRun`
+3. 일반 창에서 방송 소유자(회원 A)로 가입해 녹화방송 하나를 등록하고, 시크릿 창에서 후원자(회원 B)로 가입합니다.
 
-### 1단계: 녹화방송
+**브라우저로 확인**
 
-1. `./gradlew bootRun` 으로 서버를 띄우고 <http://localhost:8080> 을 엽니다. 처음에는 등록된 녹화방송이 없다는 안내가 보입니다.
-2. **녹화방송 등록** 을 누릅니다.
-3. 제목을 입력하고 **영상 파일 업로드** 에서 mp4 파일을 고른 뒤 **등록** 을 누릅니다.
-   - 상세 화면으로 이동하고, 플레이어에서 영상이 재생되는지 확인합니다. 재생 바로 원하는 위치로 이동해 봅니다.
-4. 다시 **녹화방송 등록** 에서 제목과 **이미 저장된 영상 주소**(예: 공개된 mp4 주소)를 입력해 등록합니다.
-   - 상세 화면에서 그 주소의 영상이 재생되는지 확인합니다.
-5. 잘못된 입력을 확인합니다.
-   - 영상 없이 제목만 등록 → "영상 파일을 올리거나 영상 주소를 입력해 주세요." 오류가 보이고 입력한 제목은 유지됩니다.
-   - 파일과 주소를 둘 다 넣어 등록 → "하나만 입력해 주세요." 오류
-   - 주소에 `ftp://...` 입력 → http/https 오류
-6. 상단 로고를 눌러 목록으로 가서, 등록한 두 방송이 최신순으로 보이는지 확인하고 각각 눌러 상세로 이동합니다.
-7. 서버를 `Ctrl+C`로 끄고 다시 `./gradlew bootRun` 으로 띄웁니다.
-   - 목록에 두 방송이 그대로 있고, 업로드한 영상이 여전히 재생되는지 확인합니다.
-8. 처음 상태로 되돌리려면 서버를 끈 뒤 `data/` 디렉터리를 지웁니다.
+1. **키 없음**: 키 없이 서버를 띄우면 방송 화면의 후원 영역에 "결제 키가 설정되지 않아 후원을 받을 수 없습니다."만 보이고 합계는 0원입니다. 다른 화면은 평소처럼 동작합니다.
+2. **테스트 결제 성공**: B로 A의 방송 화면에서 금액(5,000원)과 메시지를 입력하고 **후원하기** 를 누릅니다. 토스 결제창에서 테스트 결제를 진행해 결제를 마칩니다(테스트 환경에서는 개발자센터 안내대로 테스트 카드 정보를 쓰며 실제 청구되지 않습니다). 결과 화면에 후원 확정이 보이고, 방송으로 돌아가면 합계 5,000원과 내역(B 닉네임·금액·메시지)이 보입니다.
+3. **성공 페이지 새로고침**: 결과 화면(주소가 `/donations/success?...`)에서 새로고침을 여러 번 누릅니다. 같은 결과 화면이 나오고, 방송 화면의 합계는 5,000원 그대로이며 내역도 1건입니다(중복 적립 없음).
+4. **결제 실패**: 후원하기 후 결제창에서 거절되는 테스트 결제(개발자센터의 테스트 안내 참고)를 진행합니다. "결제에 실패해 후원하지 않았습니다." 화면이 나오고 합계·내역은 그대로입니다.
+5. **결제창 닫기(취소)**: 후원하기 후 결제창을 닫습니다(결제창의 취소). "결제를 취소해 후원하지 않았습니다." 화면과 다시 시도 링크가 나오고, 합계·내역은 그대로입니다. 다시 시도하면 새 후원 주문으로 결제할 수 있습니다.
+6. **거절되는 후원**
+   - 로그인하지 않은 창: 후원 폼 대신 "로그인 후 후원" 링크만 보입니다.
+   - 소유자 A로 자기 방송: "이 방송에는 후원할 수 없습니다."만 보이고 폼이 없습니다.
+   - 라이브 방송도 같습니다(2단계 절차로 라이브를 시작하고 시청 화면에서 확인).
+7. **재시작**: 서버를 `Ctrl+C` 로 끄고 같은 `data/` 로 다시 띄웁니다. 확정된 후원과 합계가 그대로 남아 있습니다.
 
-curl로 확인할 수도 있습니다:
+**curl로 확인: 화면 버튼이 아니라 서버가 거절·중복 방지를 한다**
+
+토스 결제창 없이도 서버 응답을 볼 수 있는 항목입니다(깨끗한 `data/` 에서 시작해 녹화방송 번호가 1이라고 가정). [3단계 curl 예시](#3단계-인증인가와-댓글-1)의 도우미(`tok`, `code`, `refresh`)와 가입 절차를 먼저 실행해 `owner1.jar`(소유자), `other1.jar`(후원자), `anon.jar`(비로그인) 쿠키 파일과 소유자의 녹화방송(1번)이 있어야 합니다. 주석은 기대하는 결과입니다.
 
 ```bash
-curl -i -F title='테스트 다시보기' -F videoFile=@sample.mp4 http://localhost:8080/broadcasts
-curl -i -F title='외부 영상' -F videoUrl=https://example.com/video.mp4 http://localhost:8080/broadcasts
+BASE=http://localhost:8080
+J='Content-Type: application/json'
+order() { curl -s -b "$1.jar" -H "$J" -H "X-XSRF-TOKEN: $(tok $1.jar)" \
+          -d "{\"kind\":\"RECORDED\",\"broadcastId\":1,\"amount\":${2:-5000},\"message\":\"curl 후원\"}" $BASE/donations; }
+
+# 비로그인 -> 401
+curl -s -o /dev/null -w "%{http_code}\n" -b anon.jar -H "$J" -H "X-XSRF-TOKEN: $(tok anon.jar)" \
+     -d '{"kind":"RECORDED","broadcastId":1,"amount":5000}' $BASE/donations
+# CSRF 토큰 없이 -> 403
+curl -s -o /dev/null -w "%{http_code}\n" -b other1.jar -H "$J" \
+     -d '{"kind":"RECORDED","broadcastId":1,"amount":5000}' $BASE/donations
+# 소유자가 자기 방송에 -> 400 {"message":"자기 방송에는 후원할 수 없습니다."}
+order owner1
+# 금액 규칙 위반(500원) -> 400 {"message":"후원 금액은 1,000원 단위로 ..."}
+order other1 500
+# 후원자 -> 201 {"orderId":"...","amount":5000,"orderName":"hello 후원","clientKey":"test_ck_...",...}
+order other1
 ```
 
-응답의 `Location` 헤더가 새 녹화방송의 상세 화면 주소입니다.
+**성공 주소는 후원자 본인만**: 로그인하지 않고 열면 `302`(로그인 화면), 다른 회원(`owner1.jar`)으로 열면 `403` 이고 주문은 바뀌지 않습니다.
+
+```bash
+ORDER=<위 order other1 응답의 orderId>
+curl -s -o /dev/null -w "%{http_code}\n" "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=5000"             # 302 -> /login
+curl -s -o /dev/null -w "%{http_code}\n" -b owner1.jar "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=5000"   # 403
+```
+
+**금액을 바꾼 success 주소 거절**: 위 `order other1` 응답의 `orderId` 를 `ORDER` 에 넣고, 주문 금액(5,000원)과 다른 금액으로 성공 주소를 직접 엽니다. 서버는 토스에 승인 요청을 보내지 않고 주문을 `실패` 로 닫습니다.
+
+```bash
+ORDER=<orderId>
+curl -s -o /dev/null -w "%{http_code}\n" -b other1.jar "$BASE/donations/success?paymentKey=fake&orderId=$ORDER&amount=1000"   # 400 (금액이 달라 후원을 확정하지 않았습니다)
+curl -s $BASE/broadcasts/1 | grep -c "curl 후원"                                                                  # 0 (합계·내역에 없음)
+```
+
+**웹훅 재전송: 반복해도 합계가 늘지 않는다**: 웹훅은 토스가 이 서버를 호출하므로 공개 주소가 필요합니다. `cloudflared tunnel --url http://localhost:8080` 으로 얻은 주소를 `PUBLIC` 에 넣고, 개발자센터에 `$PUBLIC/donations/webhook` 을 등록해 둡니다(등록 없이 아래 curl만으로도 재전송을 흉내낼 수 있습니다). 브라우저에서 후원을 한 번 성공시킨 뒤 결과 화면 주소의 `paymentKey`·`orderId` 를 가져옵니다.
+
+```bash
+PUBLIC=https://<임의이름>.trycloudflare.com
+PK=<결과 화면 주소의 paymentKey>; OID=<결과 화면 주소의 orderId>
+for i in 1 2 3; do
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST $PUBLIC/donations/webhook -H 'Content-Type: application/json' \
+       -d "{\"eventType\":\"PAYMENT_STATUS_CHANGED\",\"data\":{\"paymentKey\":\"$PK\",\"orderId\":\"$OID\"}}"   # 매번 200 (로그인·CSRF 토큰 불필요)
+done
+curl -s $BASE/broadcasts/1 | grep -o "후원 합계.*원"   # 합계가 웹훅 전과 같음(내역도 1건)
+# 모르는 주문번호 -> 마찬가지로 200이고 아무것도 바뀌지 않음
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $PUBLIC/donations/webhook -H 'Content-Type: application/json' \
+     -d '{"data":{"paymentKey":"x","orderId":"no-such-order"}}'
+```
+
+이미 확정된 주문의 웹훅·성공 주소 재호출은 토스를 다시 부르지 않고 같은 결과를 돌려줍니다. 결제를 마치지 않은 `대기` 주문에 웹훅이 오면 서버는 토스에 조회해 결제가 `DONE` 일 때만 확정하고, 그렇지 않으면 주문을 바꾸지 않습니다.
+
+이 상태 코드와 결과는 자동 테스트(`DonationWebTest`, `DonationFailWebTest`, `DonationWebhookTest`, `DonationSafetyWebTest`, `DonationDisabledWebTest`, `DonationRestartPersistenceTest`)가 가짜 결제사로 같은 요청을 보내 검증합니다. 위의 토스 결제창·웹훅 등록·cloudflared 구간은 실제로 실행해 확인하지 않았으므로 직접 확인해 주세요.
+
+### 5단계: 로컬 오토스케일
+
+부하를 걸면 인스턴스 수가 늘고, 부하를 멈추면 다시 줄어드는지, 그동안 로그인 상태·방송 목록·댓글이 그대로인지 확인합니다. **아래 결과는 2026-11-16 이 저장소의 스크립트로 실제 kind 클러스터에서 실행한 출력입니다**(전체 기록: [docs/scale-check/](docs/scale-check/)). 실행 환경: macOS, Docker Desktop(CPU 8개, 메모리 4GB), kind 단일 노드.
+
+준비
+
+1. Docker를 켜고 kind·kubectl을 설치합니다(예: `brew install kind kubectl`).
+2. `scripts/cluster-up.sh` 로 배포합니다. 끝나면 `kubectl --context kind-chzzk get pods` 에 `chzzk-…` 파드 2개, `postgres`, `redis` 가 `Running` 입니다.
+3. 브라우저로 <http://localhost:8080> 에 접속해 가입·로그인하고 방송·댓글이 보이는지 봅니다. 응답 헤더 `X-Chzzk-Instance` 로 어느 인스턴스가 답했는지 볼 수 있습니다.
+
+```bash
+for i in 1 2 3 4 5 6; do curl -s -o /dev/null -D - http://localhost:8080/broadcasts | grep -i x-chzzk-instance; done
+# 두 파드 이름이 섞여 나오면 요청이 나뉘고 있는 것
+```
+
+스케일 아웃·인 확인
+
+1. 터미널 A: `kubectl --context kind-chzzk get hpa,pods -w` (또는 15초마다 `kubectl --context kind-chzzk get hpa chzzk`)
+2. 터미널 B: `scripts/check-state.sh` (확인용 회원을 만들어 로그인하고 방송·댓글을 하나 만든 뒤, 같은 세션으로 10초마다 확인)
+3. 터미널 C: `scripts/load.sh` (k6 Job, 약 5분 30초)
+4. 터미널 A에서 `REPLICAS` 가 2 → 3 → 5 로 늘었다가, 부하가 끝나고 약 1분 뒤부터 4 → 3 → 2 로 줄어드는지 봅니다.
+5. 터미널 B의 모든 줄이 `로그인=유지 방송목록=유지 댓글=유지` 이고, `응답 인스턴스` 가 여러 파드로 바뀌는지 봅니다.
+6. 끝나면 `scripts/cluster-down.sh` 로 정리합니다.
+
+실제 결과: 인스턴스 수 변화 (15초 간격 기록 64줄 중 변화가 보이는 줄. `kubectl get hpa chzzk`, 열: 시각 · 이름 · 대상 · CPU 사용률/목표 · 최소 · 최대 · **현재 인스턴스 수** · 나이)
+
+```
+23:22:20  chzzk   Deployment/chzzk   cpu: 42%/50%   2     5     2     47m
+23:22:36  chzzk   Deployment/chzzk   cpu: 58%/50%   2     5     2     47m
+23:23:19  chzzk   Deployment/chzzk   cpu: 76%/50%   2     5     3     48m
+23:26:11  chzzk   Deployment/chzzk   cpu: 362%/50%   2     5     3     51m
+23:26:26  chzzk   Deployment/chzzk   cpu: 357%/50%   2     5     5     51m
+23:26:58  chzzk   Deployment/chzzk   cpu: 432%/50%   2     5     5     52m
+23:29:37  chzzk   Deployment/chzzk   cpu: 30%/50%   2     5     5     54m
+23:31:56  chzzk   Deployment/chzzk   cpu: 22%/50%   2     5     5     57m
+23:32:11  chzzk   Deployment/chzzk   cpu: 17%/50%   2     5     4     57m
+23:32:42  chzzk   Deployment/chzzk   cpu: 14%/50%   2     5     3     57m
+23:33:13  chzzk   Deployment/chzzk   cpu: 6%/50%   2     5     2     58m
+23:39:36  chzzk   Deployment/chzzk   cpu: 7%/50%   2     5     2     64m
+```
+
+- 부하 시작 직후 CPU가 목표 50%를 넘어 **2 → 3**, 부하 유지 중 **3 → 5**(최대)로 늘었습니다.
+- 부하가 끝난 뒤(23:28 무렵) CPU가 내려가고, 축소 안정화 60초가 지난 뒤 **5 → 4 → 3 → 2**(최소)로 줄었습니다. 그 뒤로는 2개를 유지했습니다.
+- 중간의 `<unknown>` 은 새 파드가 막 떠서 metrics-server가 아직 지표를 모으지 못한 구간입니다.
+
+실제 결과: 스케일 중 상태 유지 (`scripts/check-state.sh`, 10초 간격 91번 중 일부)
+
+```
+확인용 회원 check1794838940, 방송 /broadcasts/2, 댓글 1개를 만들었습니다. 10초마다 확인합니다.
+23:22:22  응답 인스턴스=chzzk-58c7bf9969-x6pbp     로그인=유지 방송목록=유지 댓글=유지
+23:26:05  응답 인스턴스=chzzk-58c7bf9969-x6pbp     로그인=유지 방송목록=유지 댓글=유지
+23:26:15  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
+23:26:30  응답 인스턴스=chzzk-58c7bf9969-sj7n7     로그인=유지 방송목록=유지 댓글=유지
+23:26:41  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
+23:34:41  응답 인스턴스=chzzk-58c7bf9969-ql52s     로그인=유지 방송목록=유지 댓글=유지
+```
+
+- 91번 모두 `로그인=유지 방송목록=유지 댓글=유지` 였고, 응답한 인스턴스는 5개 파드에 걸쳐 바뀌었습니다(전체: [docs/scale-check/2026-11-16-state.log](docs/scale-check/2026-11-16-state.log)).
+- k6 결과: 요청 597,305건, 실패 0%, 체크 100% 통과, p95 응답 106ms ([docs/scale-check/2026-11-16-k6-summary.txt](docs/scale-check/2026-11-16-k6-summary.txt)).
+
+라이브 확인 (클러스터 모드)
+
+1. 브라우저에서 라이브를 시작만 하고 방송자 화면을 열지 않으면, 접속 유예 30초 뒤 방송이 종료되고 열려 있던 시청 화면에 새로고침 없이 "방송이 종료되었습니다." 가 뜹니다(종료 판정과 종료 알림이 인스턴스 사이에 전달됨. 위 날짜에 브라우저로 확인).
+2. 휴대폰으로 송출하려면 [휴대폰 연결 방법](#휴대폰-연결-방법)처럼 `cloudflared tunnel --url http://localhost:8080` 으로 HTTPS 주소를 만들어 송출 화면을 엽니다. 시청 화면을 다른 기기에서 열면 방송자와 시청자가 서로 다른 인스턴스에 붙어도 영상이 보입니다.
+3. 방송 중에 `kubectl --context kind-chzzk delete pod <앱 파드 하나>` 로 인스턴스를 하나 없애도 방송은 종료되지 않고, 화면은 다시 접속합니다(방송자 연결이 끊긴 채 30초가 지나면 종료). 실제 휴대폰 송출은 이 문서를 쓰며 실행하지 않았고, 같은 동작을 `ClusterLiveTest` 가 확인합니다.
