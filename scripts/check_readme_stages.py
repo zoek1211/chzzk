@@ -14,6 +14,8 @@ import sys
 STAGE_HEADING = re.compile(r"^### \d+단계")
 SECTION_END = re.compile(r"^#{1,3} ")
 NOTE_LINE = re.compile(r"^> \d+단계에서 바뀐 점")
+# 이름만 바뀐 상위 제목: 옛 태그 README의 제목 → 지금 제목
+RENAMED_PARENTS = {"## 이번 단계 구현 범위": "## 단계별 구현 범위"}
 
 
 def git(*args):
@@ -29,7 +31,7 @@ def stage_sections(text):
         if not in_code and SECTION_END.match(line):
             current = None
             if line.startswith("## "):
-                parent = line
+                parent = RENAMED_PARENTS.get(line, line)
             if STAGE_HEADING.match(line):
                 current = (parent, line)
                 sections[current] = []
